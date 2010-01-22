@@ -64,6 +64,7 @@ request_id() = ref()
 profile()    = atom()
 path()       = string() representing a file path or directory path 
 ip_address() = See inet(3)
+ipfamily()   = inet | inet6 | inet6fb4
 socket_opt() = See the Options used by gen_tcp(3) and 
                ssl(3) connect(s)
     ]]></code>
@@ -132,10 +133,35 @@ ssl_options() = {verify,     code()}   |
     <p>The client can be stopped using inets:stop(httpc, Pid) or
     inets:stop(httpc, Profile).</p>
     
-    <marker id="request1"></marker>
+    <marker id="simple_profile"></marker>
   </section>
   
   <funcs>
+    <func>
+      <name>simple_profile() -> profile()</name>
+      <fsummary>Returns the simple profile</fsummary>
+      <type>
+        <v>Url = url() </v> 
+	<v>Result = {status_line(), headers(), body()} | 
+                    {status_code(), body()} | request_id() </v>
+	<v>Profile = profile()</v>
+	<v>Reason = term() </v>
+      </type>
+      <desc>
+        <p>A profile is used when calling 
+          <seealso marker="#request1">receiver/2</seealso> or
+          <seealso marker="#request2">receiver/5</seealso> functions. </p>
+
+        <p>The simple profile differs from other profiles (including
+          the default profile) by not executing the request(s) using the
+          normal httpc framework. This also means that there is no need
+          to start the inets application or even the httpc service 
+          (standalone or otherwise). </p>
+
+        <marker id="request1"></marker>
+      </desc>
+    </func>
+
     <func>
       <name>request(Url) -> </name>
       <name>request(Url, Profile) -> {ok, Result} | {error, Reason}</name>
@@ -174,16 +200,32 @@ ssl_options() = {verify,     code()}   |
         <v>timeout() = integer() >= 0 | infinity</v>
         <v>Options = options()</v>
         <v>options() = [option()]</v>
-        <v>option() = {sync,          boolean()} | 
+        <v>option() = {proxy,         {Proxy, NoProxy}} |
+                      {ipfamily,      IpFamily} |
+                      {ip,            IpAddress} |
+                      {port,          Port}  | 
+                      {sync,          boolean()} | 
                       {stream,        stream_to()} | 
+                      {receiver,      receiver()} | 
                       {body_format,   body_format()} | 
                       {full_result,   boolean()} | 
                       {headers_as_is, boolean() |
-                      {socket_opts,   socket_opts()} | 
-                      {receiver,      receiver()}}</v>
+                      {socket_opts,   socket_opts()}</v>
+        <v>Proxy = {Hostname, Port}</v>
+        <v>Hostname = string() </v>
+        <d>ex: "localhost" or "foo.bar.se"</d>
+        <v>Port = integer()</v>
+        <d>ex: 8080 </d>
+        <v>NoProxy = [NoProxyDesc]</v>
+        <v>NoProxyDesc = DomainDesc | HostName | IPDesc</v>
+        <v>DomainDesc = "*.Domain"</v>
+        <d>ex: "*.ericsson.se"</d>
+        <v>IpFamily = ipfamily()</v>
+        <v>IpAddress = ip_address()</v>
+        <v>Port = integer() > 0</v>
         <v>stream_to() = none | self | {self, once} | filename() </v>
-        <v>socket_opts() = [socket_opt()]</v>
         <v>receiver() = pid() | function()/1 | {Module, Function, Args} </v>
+        <v>socket_opts() = [socket_opt()]</v>
         <v>Module = atom() </v>
         <v>Function = atom() </v>
         <v>Args = list() </v>
@@ -262,9 +304,46 @@ ssl_options() = {verify,     code()}   |
 
         <p>Option (<c>option()</c>) details: </p>
         <taglist>
+          <tag><c><![CDATA[proxy]]></c></tag>
+          <item>
+            <p>Proxy settings. </p>
+            <p><b>Only</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
+	  </item>
+
+          <tag><c><![CDATA[ipfamily]]></c></tag>
+          <item>
+            <p>When it is set to <c>inet6fb4</c> you can use both 
+              ipv4 and ipv6. It first tries <c>inet6</c> and if that 
+              does not works falls back to <c>inet</c>. The option 
+              is here to provide a workaround for a buggy ipv6 stacks 
+              to ensure that ipv4 will always work. </p>
+            <p>Defaults to <c>inet</c>. </p>
+            <p><b>Only</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
+	  </item>
+
+          <tag><c><![CDATA[ip]]></c></tag>
+          <item>
+            <p>If the host has several network interfaces, this option 
+              specifies which one to use.
+              See gen_tcp:connect/3,4 for more info. </p>
+            <p><b>Only</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
+	  </item>
+
+          <tag><c><![CDATA[port]]></c></tag>
+          <item>
+            <p>Specify which local port number to use.
+              See gen_tcp:connect/3,4 for more info. </p>
+            <p><b>Only</b> allowed for simple profile. </p>
+	  </item>
+
           <tag><c><![CDATA[sync]]></c></tag>
           <item>
             <p>Shall the request be synchronous or asynchronous. </p>
+            <p><b>Not</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
             <p>Defaults to <c>true</c>. </p>
 	  </item>
 
@@ -287,54 +366,9 @@ ssl_options() = {verify,     code()}   |
 	      message than in the stream_start.
 	      When streaming to a file and the request is asynchronous the
 	      message {http, {RequestId, saved_to_file}} will be sent. </p>
+            <p><b>Not</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
             <p>Defaults to <c>none</c>. </p>
-	  </item>
-
-          <tag><c><![CDATA[body_format]]></c></tag>
-          <item>
-            <p>Defines if the body shall be delivered as a string or as a 
-              binary. This option is only valid for the synchronous 
-              request. </p>
-            <p>Defaults to <c>string</c>. </p>
-	  </item>
-
-          <tag><c><![CDATA[full_result]]></c></tag>
-          <item>
-            <p>Should a "full result" be returned to the caller (that is,
-              the body, the headers and the entire status-line) or not 
-              (the body and the status code). </p>
-            <p>Defaults to <c>true</c>. </p>
-	  </item>
-
-          <tag><c><![CDATA[header_as_is]]></c></tag>
-          <item>
-            <p>Shall the headers provided by the user be made 
-              lower case or be regarded as case sensitive. </p>
-            <p>Note that the http standard requires them to be 
-              case insenstive. This feature should only be used if there is 
-              no other way to communicate with the server or for testing 
-              purpose. Also note that when this option is used no headers 
-              will be automatically added, all necessary headers has to be 
-              provided by the user. </p>
-            <p>Defaults to <c>false</c>. </p>
-	  </item>
-
-          <tag><c><![CDATA[socket_opts]]></c></tag>
-          <item>
-            <p>Socket options to be used for this and subsequent 
-              request(s). </p>
-            <p>Overrides any value set by the 
-              <seealso marker="set_options">set_options</seealso> 
-              function. </p>
-            <p>Note that the validity of the options are <em>not</em>
-              checked in any way. </p>
-            <p>Note that this may change the socket behaviour 
-              (see <seealso marker="inet#setopts">inet:setopts/2</seealso>) 
-              for an already existing, and therefor already connected 
-              request handler. </p>
-            <p>By defaults the socket options set by the 
-              <seealso marker="#set_options">set_options/1,2</seealso> 
-              function is used when establishing connection. </p>
 	  </item>
 
           <tag><c><![CDATA[receiver]]></c></tag>
@@ -384,9 +418,59 @@ apply(Module, Function, [ReplyInfo | Args])
 {RequestId, stream_end,   Headers}
 </pre>
 
+            <p><b>Not</b> allowed for 
+              <seealso marker="#simple_profile">simple</seealso> profile. </p>
             <p>Defaults to the <c>pid()</c> of the process calling the request 
               function (<c>self()</c>). </p>
 	  </item>
+
+          <tag><c><![CDATA[body_format]]></c></tag>
+          <item>
+            <p>Defines if the body shall be delivered as a string or as a 
+              binary. This option is only valid for the synchronous 
+              request. </p>
+            <p>Defaults to <c>string</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[full_result]]></c></tag>
+          <item>
+            <p>Should a "full result" be returned to the caller (that is,
+              the body, the headers and the entire status-line) or not 
+              (the body and the status code). </p>
+            <p>Defaults to <c>true</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[header_as_is]]></c></tag>
+          <item>
+            <p>Shall the headers provided by the user be made 
+              lower case or be regarded as case sensitive. </p>
+            <p>Note that the http standard requires them to be 
+              case insenstive. This feature should only be used if there is 
+              no other way to communicate with the server or for testing 
+              purpose. Also note that when this option is used no headers 
+              will be automatically added, all necessary headers has to be 
+              provided by the user. </p>
+            <p>Defaults to <c>false</c>. </p>
+	  </item>
+
+          <tag><c><![CDATA[socket_opts]]></c></tag>
+          <item>
+            <p>Socket options to be used for this and subsequent 
+              request(s). </p>
+            <p>Overrides any value set by the 
+              <seealso marker="set_options">set_options</seealso> 
+              function. </p>
+            <p>Note that the validity of the options are <em>not</em>
+              checked in any way. </p>
+            <p>Note that this may change the socket behaviour 
+              (see <seealso marker="inet#setopts">inet:setopts/2</seealso>) 
+              for an already existing, and therefor already connected 
+              request handler. </p>
+            <p>By defaults the socket options set by the 
+              <seealso marker="#set_options">set_options/1,2</seealso> 
+              function is used when establishing connection. </p>
+	  </item>
+
         </taglist>
 
         <marker id="cancel_request"></marker>
@@ -432,6 +516,10 @@ apply(Module, Function, [ReplyInfo | Args])
         <d>ex: "localhost" or "foo.bar.se"</d>
         <v>Port = integer()</v>
         <d>ex: 8080 </d>
+        <v>NoProxy = [NoProxyDesc]</v>
+        <v>NoProxyDesc = DomainDesc | HostName | IPDesc</v>
+        <v>DomainDesc = "*.Domain"</v>
+        <d>ex: "*.ericsson.se"</d>
         <v>socket_opts() = [socket_opt()]</v>
         <d>The options are appended to the socket options used by the 
           client. </d>
@@ -439,10 +527,6 @@ apply(Module, Function, [ReplyInfo | Args])
           is started (for the initial connect). They are passed directly 
           to the underlying transport (gen_tcp or ssl) <em>without</em> 
           verification! </d>
-        <v>NoProxy = [NoProxyDesc]</v>
-        <v>NoProxyDesc = DomainDesc | HostName | IPDesc</v>
-        <v>DomainDesc = "*.Domain"</v>
-        <d>ex: "*.ericsson.se"</d>
         <v>IpDesc = string()</v>
         <d>ex: "134.138" or "[FEDC:BA98" (all IP-addresses starting with 134.138 or FEDC:BA98), "66.35.250.150" or "[2010:836B:4179::836B:4179]" (a complete IP-address).</d>
         <v>MaxSessions = integer() </v>
@@ -472,7 +556,7 @@ apply(Module, Function, [ReplyInfo | Args])
           saved in the client manager's cookie database. 
           If the option verify is used the function http:verify_cookie/2 
           has to be called for the cookie to be saved.</d>
-        <v>IpFamily = inet | inet6 | inet6fb4 </v>
+        <v>IpFamily = ipfamily() </v>
         <d>By default <em>inet</em>. 
           When it is set to <c>inet6fb4</c> you can use both ipv4 and ipv6. 
           It first tries <c>inet6</c> and if that does not works falls back to <c>inet</c>. 

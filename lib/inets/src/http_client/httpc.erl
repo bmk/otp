@@ -38,7 +38,7 @@
 	 which_cookies/0, which_cookies/1, 
 	 reset_cookies/0, reset_cookies/1, 
 	 stream_next/1,
-	 default_profile/0, 
+	 default_profile/0, simple_profile/0, 
 	 profile_name/1, profile_name/2,
 	 info/0, info/1
 	]).
@@ -52,6 +52,7 @@
 -include("httpc_internal.hrl").
 
 -define(DEFAULT_PROFILE, default).
+-define(SIMPLE_PROFILE,  simple).
 
 
 %%%=========================================================================
@@ -60,6 +61,9 @@
 
 default_profile() ->
     ?DEFAULT_PROFILE.
+
+simple_profile() ->
+    ?SIMPLE_PROFILE.
 
 
 profile_name(?DEFAULT_PROFILE) ->
@@ -420,43 +424,30 @@ service_info(Pid) ->
 
 handle_request(Method, Url, 
 	       {Scheme, UserInfo, Host, Port, Path, Query}, 
-	       Headers, ContentType, Body, 
-	       HTTPOptions0, Options0, Profile) ->
-
-    Started    = http_util:timestamp(), 
-    NewHeaders = [{http_util:to_lower(Key), Val} || {Key, Val} <- Headers],
+	       Headers, ContentType, Body, HTTPOptions, Options, 
+	       Profile) ->
 
     try
 	begin
-	    HTTPOptions   = http_options(HTTPOptions0),
-	    Options       = request_options(Options0), 
-	    Sync          = proplists:get_value(sync,   Options),
-	    Stream        = proplists:get_value(stream, Options),
-	    Host2         = header_host(Host, Port), 
-	    HeadersRecord = header_record(NewHeaders, Host2, HTTPOptions),
-	    Receiver   = proplists:get_value(receiver, Options),
-	    SocketOpts = proplists:get_value(socket_opts, Options),
-	    Request = #request{from          = Receiver,
-			       scheme        = Scheme, 
-			       address       = {Host, Port},
-			       path          = Path, 
-			       pquery        = Query, 
-			       method        = Method,
-			       headers       = HeadersRecord, 
-			       content       = {ContentType, Body},
-			       settings      = HTTPOptions, 
-			       abs_uri       = Url, 
-			       userinfo      = UserInfo, 
-			       stream        = Stream, 
-			       headers_as_is = headers_as_is(Headers, Options),
-			       socket_opts   = SocketOpts, 
-			       started       = Started},
-	    case httpc_manager:request(Request, profile_name(Profile)) of
-		{ok, RequestId} ->
-		    handle_answer(RequestId, Sync, Options);
-		{error, Reason} ->
-		    {error, Reason}
-	    end
+	    Started = http_util:timestamp(), 
+	    {Sync, FullResult, BodyFormat, SimpleOptions, Request} = 
+		process_request_data(Profile, 
+				     Started, 
+				     Method, 
+				     Url, 
+				     Scheme, 
+				     UserInfo, 
+				     Host, 
+				     Port, 
+				     Path, 
+				     Query, 
+				     Headers, 
+				     ContentType, 
+				     Body, 
+				     HTTPOptions, 
+				     Options),
+	    handle_request(Profile, Request, Sync, FullResult, BodyFormat,
+			   SimpleOptions)
 	end
     catch
 	error:{noproc, _} ->
@@ -465,43 +456,154 @@ handle_request(Method, Url,
 	    Error
     end.
 
+handle_request(?SIMPLE_PROFILE = _Profile, 
+	       Request, _Sync, _FullResult, _BodyFormat, 
+	       SimpleOptions) ->
+    httpc_simple:request(Request, SimpleOptions);
 
-handle_answer(RequestId, false, _) ->
+handle_request(Profile, Request, Sync, FullResult, BodyFormat, _) ->
+    case httpc_manager:request(Request, profile_name(Profile)) of
+	{ok, RequestId} ->
+	    handle_answer(RequestId, Sync, FullResult, BodyFormat);
+	{error, Reason} ->
+	    {error, Reason}
+    end.
+
+
+handle_answer(RequestId, false = _Sync, _FullResult, _BodyFormat) ->
     {ok, RequestId};
-handle_answer(RequestId, true, Options) ->
+handle_answer(RequestId, true  = _Sync,  FullResult,  BodyFormat) ->
     receive
 	{http, {RequestId, saved_to_file}} ->
 	    {ok, saved_to_file};
 	{http, {RequestId, {_,_,_} = Result}} ->
-	    return_answer(Options, Result);
+	    return_answer(Result, FullResult, BodyFormat);
 	{http, {RequestId, {error, Reason}}} ->
 	    {error, Reason}
     end.
 
-return_answer(Options, {{"HTTP/0.9",_,_}, _, BinBody}) ->
-    Body = maybe_format_body(BinBody, Options),
+return_answer({{"HTTP/0.9", _, _}, _, BinBody}, _FullResult, BodyFormat) ->
+    Body = maybe_format_body(BinBody, BodyFormat),
     {ok, Body};
-   
-return_answer(Options, {StatusLine, Headers, BinBody}) ->
+return_answer({StatusLine, Headers, BinBody}, FullResult, BodyFormat) ->
+    Body = maybe_format_body(BinBody, BodyFormat),
+    return_answer(StatusLine, Headers, Body, FullResult).
 
-    Body = maybe_format_body(BinBody, Options),
+return_answer(StatusLine, Headers, Body, true = _FullResult) ->
+    Result = {StatusLine, Headers, Body},
+    {ok, Result};
+return_answer(StatusLine, _Headers, Body, _FullResult) ->
+    {_, Status, _} = StatusLine, 
+    Result = {Status, Body},
+    {ok, Result}.
+
+maybe_format_body(BinBody, string = _BodyFormat) ->
+    binary_to_list(BinBody);
+maybe_format_body(BinBody, _BodyFormat) ->
+    BinBody.
+
+
+process_request_data(Profile, 
+		     Started, 
+		     Method, 
+		     Url, 
+		     Scheme, 
+		     UserInfo, 
+		     Host, 
+		     Port, 
+		     Path, 
+		     Query, 
+		     Headers, 
+		     ContentType, 
+		     Body, 
+		     HTTPOptions0, 
+		     Options0) ->
+
+    NewHeaders    = [{http_util:to_lower(Key), Val} || {Key, Val} <- Headers],
+
+    %% Process HTTP options
+    NewHeaders    = [{http_util:to_lower(Key), Val} || {Key, Val} <- Headers],
+    HTTPOptions   = http_options(HTTPOptions0),
+    Host2         = header_host(Host, Port), 
+    HeadersRecord = header_record(NewHeaders, Host2, HTTPOptions),
+
+    %% Process options
+    Options       = request_options(Options0, Profile), 
+    SocketOpts    = get_socket_opts(Options),
+    BodyFormat    = get_body_format(Options), 
+    FullResult    = get_full_result(Options), 
+    %% The options below is not used when profile = simple
+    Sync          = get_sync(Options, Profile),
+    Stream        = get_stream(Options, Profile),
+    Receiver      = get_receiver(Options, Profile),
+    %% The options below is *only* used when profile = simple
+    Proxy         = get_proxy(Options, Profile), 
+    IpFamily      = get_ipfamily(Options, Profile), 
+    LocalIP       = get_local_ip(Options, Profile), 
+    LocalPort     = get_local_port(Options, Profile), 
+    SimpleOptions = #simple_options{proxy    = Proxy,
+				    ipfamily = IpFamily,
+				    ip       = LocalIP, 
+				    port     = LocalPort}, 
+    {Sync, FullResult, BodyFormat, SimpleOptions, 
+     #request{from          = Receiver,
+	      scheme        = Scheme, 
+	      address       = {Host, Port},
+	      path          = Path, 
+	      pquery        = Query, 
+	      method        = Method,
+	      headers       = HeadersRecord, 
+	      content       = {ContentType, Body},
+	      settings      = HTTPOptions, 
+	      abs_uri       = Url, 
+	      userinfo      = UserInfo, 
+	      stream        = Stream, 
+	      headers_as_is = headers_as_is(Headers, Options),
+	      socket_opts   = SocketOpts, 
+	      started       = Started}}.
+
+get_socket_opts(Options) ->
+    proplists:get_value(socket_opts, Options).
+
+get_body_format(Options) ->
+    proplists:get_value(body_format, Options).
+
+get_full_result(Options) ->
+    proplists:get_value(full_result, Options).
+
+get_sync(Options, Profile) ->
+    get_non_simple_option(sync, Options, Profile).
+
+get_stream(Options, Profile) ->
+    get_non_simple_option(stream, Options, Profile).
+
+get_receiver(Options, Profile) ->
+    get_non_simple_option(sync, Options, Profile).
+
+get_proxy(Options, Profile) ->
+    get_simple_option(proxy, Options, Profile).
+
+get_ipfamily(Options, Profile) ->
+    get_simple_option(ipfamily, Options, Profile).
+
+get_local_ip(Options, Profile) ->
+    get_simple_option(local_ip, Options, Profile).
+
+get_local_port(Options, Profile) ->
+    get_simple_option(local_port, Options, Profile).
+
+get_non_simple_option(Key, Options,  Profile) 
+  when (Profile =/= ?SIMPLE_PROFILE) ->
+    proplists:get_value(Key, Options);
+get_non_simple_option(_Key, _Options, _profile) ->
+    undefined.
+
+get_simple_option(Key, Options, ?SIMPLE_PROFILE = _Profile) ->
+    proplists:get_value(Key, Options);
+get_simple_option(_Key, _Options, _profile) ->
+    undefined.
+
     
-    case proplists:get_value(full_result, Options, true) of
-	true ->
-	    {ok, {StatusLine, Headers, Body}};
-	false ->
-	    {_, Status, _} = StatusLine,
-	    {ok, {Status, Body}}
-    end.
-
-maybe_format_body(BinBody, Options) ->
-    case proplists:get_value(body_format, Options, string) of
-	string ->
-	    binary_to_list(BinBody);
-	_ ->
-	    BinBody
-    end.
-
 %% This options is a workaround for http servers that do not follow the 
 %% http standard and have case sensative header parsing. Should only be
 %% used if there is no other way to communicate with the server or for
@@ -615,7 +717,105 @@ http_options_default() ->
     ].
 
 
-request_options_defaults() ->
+request_options(Options, Profile) ->
+    Defaults = request_options_defaults(Profile), 
+    request_options(Defaults, Options, []).
+
+request_options([], [], Acc) ->
+    request_options_sanity_check(Acc),
+    lists:reverse(Acc);
+request_options([], Options, Acc) ->
+    Fun = fun(BadOption) ->
+		    Report = io_lib:format("Invalid option ~p ignored ~n", 
+					   [BadOption]),
+		    error_logger:info_report(Report)
+	  end,
+    lists:foreach(Fun, Options),
+    Acc;
+request_options([{Key, DefaultVal, Verify} | Defaults], Options, Acc) ->
+    case lists:keysearch(Key, 1, Options) of
+	{value, {Key, Value}} ->
+	    case Verify(Value) of
+		ok ->
+		    Options2 = lists:keydelete(Key, 1, Options),
+		    request_options(Defaults, Options2, [{Key, Value} | Acc]);
+		{ok, Value2} ->
+		    Options2 = lists:keydelete(Key, 1, Options),
+		    request_options(Defaults, Options2, [{Key, Value2} | Acc]);
+		error ->
+		    Report = io_lib:format("Invalid option ~p:~p ignored ~n", 
+					   [Key, Value]),
+		    error_logger:info_report(Report),
+		    Options2 = lists:keydelete(Key, 1, Options),
+		    request_options(Defaults, Options2, Acc)
+	    end;
+	false ->
+	    request_options(Defaults, Options, [{Key, DefaultVal} | Acc])
+    end.
+
+request_options_sanity_check(Opts) ->
+    case proplists:get_value(sync, Opts) of
+	Sync when (Sync =:= true) ->
+	    case proplists:get_value(receiver, Opts) of
+		Pid when is_pid(Pid) andalso (Pid =:= self()) ->
+		    ok;
+		BadReceiver ->
+		    throw({error, {bad_options_combo, 
+				   [{sync, true}, {receiver, BadReceiver}]}})
+	    end,
+	    case proplists:get_value(stream, Opts) of
+		Stream when (Stream =:= self) orelse 
+			    (Stream =:= {self, once}) ->
+		    throw({error, streaming_error});
+		_ ->
+		    ok
+	    end;
+	_ ->
+	    ok
+    end,
+    ok.
+
+
+request_options_defaults(Profile) ->
+    VerifyProxy = 
+	fun(Value) ->
+		case (catch validate_proxy(Value)) of
+		    {error, _} ->
+			error;
+		    _ ->
+			ok
+		end
+	end,
+    
+    VerifyIpFamily = 
+	fun(Value) ->
+		case (catch validate_ipfamily(Value)) of
+		    {error, _} ->
+			error;
+		    _ ->
+			ok
+		end
+	end,
+
+    VerifyIP = 
+	fun(Value) ->
+		case (catch validate_ip(Value)) of
+		    {error, _} ->
+			error;
+		    _ ->
+			ok
+		end
+	end,
+    VerifyPort = 
+	fun(Value) ->
+		case (catch validate_port(Value)) of
+		    {error, _} ->
+			error;
+		    _ ->
+			ok
+		end
+	end,
+
     VerifyBoolean = 
 	fun(Value) when ((Value =:= true) orelse (Value =:= false)) ->
 		ok;
@@ -673,73 +873,36 @@ request_options_defaults() ->
 		error
 	end,
 
-    [
-     {sync,          true,      VerifySync}, 
-     {stream,        none,      VerifyStream},
-     {body_format,   string,    VerifyBodyFormat},
-     {full_result,   true,      VerifyFullResult},
-     {headers_as_is, false,     VerifyHeaderAsIs},
-     {receiver,      self(),    VerifyReceiver},
-     {socket_opts,   undefined, VerifySocketOpts}
-    ]. 
+    case Profile of
+	?SIMPLE_PROFILE ->
+	    [
+	     %% -- Simple profile *only* --
+	     {proxy,         undefined, VerifyProxy},      
+	     {ipfamily,      undefined, VerifyIpFamily},   
+	     {ip,            undefined, VerifyIP},    
+	     {port,          undefined, VerifyPort},  
 
-request_options(Options) ->
-    Defaults = request_options_defaults(), 
-    request_options(Defaults, Options, []).
+	     %% -- standard options --
+	     {body_format,   string,    VerifyBodyFormat},
+	     {full_result,   true,      VerifyFullResult},
+	     {headers_as_is, false,     VerifyHeaderAsIs},
+	     {socket_opts,   undefined, VerifySocketOpts}
+	    ];
+	_ ->
+	    [
+	     %% -- Only *non-simple* profile only --
+	     {sync,          true,      VerifySync}, 
+	     {stream,        none,      VerifyStream},
+	     {receiver,      self(),    VerifyReceiver},
 
-request_options([], [], Acc) ->
-    request_options_sanity_check(Acc),
-    lists:reverse(Acc);
-request_options([], Options, Acc) ->
-    Fun = fun(BadOption) ->
-		    Report = io_lib:format("Invalid option ~p ignored ~n", 
-					   [BadOption]),
-		    error_logger:info_report(Report)
-	  end,
-    lists:foreach(Fun, Options),
-    Acc;
-request_options([{Key, DefaultVal, Verify} | Defaults], Options, Acc) ->
-    case lists:keysearch(Key, 1, Options) of
-	{value, {Key, Value}} ->
-	    case Verify(Value) of
-		ok ->
-		    Options2 = lists:keydelete(Key, 1, Options),
-		    request_options(Defaults, Options2, [{Key, Value} | Acc]);
-		{ok, Value2} ->
-		    Options2 = lists:keydelete(Key, 1, Options),
-		    request_options(Defaults, Options2, [{Key, Value2} | Acc]);
-		error ->
-		    Report = io_lib:format("Invalid option ~p:~p ignored ~n", 
-					   [Key, Value]),
-		    error_logger:info_report(Report),
-		    Options2 = lists:keydelete(Key, 1, Options),
-		    request_options(Defaults, Options2, Acc)
-	    end;
-	false ->
-	    request_options(Defaults, Options, [{Key, DefaultVal} | Acc])
+	     %% -- standard options --
+	     {body_format,   string,    VerifyBodyFormat},
+	     {full_result,   true,      VerifyFullResult},
+	     {headers_as_is, false,     VerifyHeaderAsIs},
+	     {socket_opts,   undefined, VerifySocketOpts}
+	    ]
     end.
 
-request_options_sanity_check(Opts) ->
-    case proplists:get_value(sync, Opts) of
-	Sync when (Sync =:= true) ->
-	    case proplists:get_value(receiver, Opts) of
-		Pid when is_pid(Pid) andalso (Pid =:= self()) ->
-		    ok;
-		BadReceiver ->
-		    throw({error, {bad_options_combo, 
-				   [{sync, true}, {receiver, BadReceiver}]}})
-	    end,
-	    case proplists:get_value(stream, Opts) of
-		Stream when (Stream =:= self) orelse 
-			    (Stream =:= {self, once}) ->
-		    throw({error, streaming_error});
-		_ ->
-		    ok
-	    end;
-	_ ->
-	    ok
-    end,
-    ok.
 
 validate_options(Options) ->
     (catch validate_options(Options, [])).
@@ -1043,8 +1206,7 @@ header_record([{Key, Val} | Rest], RequestHeaders, Host, Version) ->
 
 validate_headers(RequestHeaders = #http_request_h{te = undefined}, Host, 
 		 "HTTP/1.1" = Version) ->
-    validate_headers(RequestHeaders#http_request_h{te = ""}, Host, 
-		     "HTTP/1.1" = Version);
+    validate_headers(RequestHeaders#http_request_h{te = ""}, Host, Version);
 validate_headers(RequestHeaders = #http_request_h{host = undefined}, 
 		 Host, "HTTP/1.1" = Version) ->
     validate_headers(RequestHeaders#http_request_h{host = Host}, Host, Version);

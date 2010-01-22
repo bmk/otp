@@ -98,6 +98,18 @@
         </item>
 
         <item>
+	  <p>[httpc] - Introduced the abillity to perform "simple"
+            requests, without having a running httpc service. </p> 
+	  <p>This is done by using the 
+            <seealso marker="httpc#simple_profile">simple</seealso>
+	    profile when calling the 
+            <seealso marker="httpc#request2">request/5</seealso>
+            (or <seealso marker="httpc#request1">request/2</seealso>)
+            function. </p>
+	  <p>Own Id: OTP-8036</p>
+        </item>
+
+        <item>
           <p>[httpc] Several more or less critical fixes:</p>
           <p>
             <list type="bulleted">

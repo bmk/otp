@@ -267,7 +267,7 @@ handle_call({connect_and_send, #request{address = Address0,
 	    %%send_ssl_tunnel_request(Address, Request,
 	    %%		    #state{options = Options,
 	    %%		   status = ssl_tunnel});
-	    Reason = https_through_proxy_is_not_currently_supported,
+	    Reason = https_through_proxy_is_not_supported,
 	    Error  = {error, Reason},
 	    {stop, Error, Error, State};
 	true ->

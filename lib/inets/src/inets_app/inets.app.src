@@ -42,6 +42,7 @@
 	    httpc_profile_sup,		
             httpc_request,
             httpc_response,     
+            httpc_simple,
             httpc_sup,
             httpc_cookie,                
 

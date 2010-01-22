@@ -79,6 +79,16 @@
 	}
        ).
 
+%%% Setting for the simple profile
+-record(simple_options, 
+	{
+	 proxy    = {undefined, []}, % {{ProxyHost, ProxyPort}, [NoProxy]},
+	 ipfamily = inet,            % inet | inet6 | inet6fb4
+	 ip       = default,         % specify local interface
+	 port     = default          % specify local port
+	}
+       ).
+
 %%% All data associated to a specific HTTP request
 -record(request,
 	{
