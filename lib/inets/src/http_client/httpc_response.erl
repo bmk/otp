@@ -101,32 +101,29 @@ result(Response = {{_, Code, _}, _, _}, Request =
 
 %% multiple choices 
 result(Response = {{_, 300, _}, _, _}, 
-       Request = #request{settings = 
-			  #http_options{autoredirect = 
-					true}}) ->
+       #request{settings = #http_options{autoredirect = true}} = Request) ->
     redirect(Response, Request);
 
 result(Response = {{_, Code, _}, _, _}, 
-       Request = #request{settings = 
-			  #http_options{autoredirect = true},
-			  method = head}) when (Code =:= 301) orelse
-					       (Code =:= 302) orelse
-					       (Code =:= 303) orelse
-					       (Code =:= 307) ->
+       #request{settings = #http_options{autoredirect = true},
+		method   = head} = Request) 
+  when (Code =:= 301) orelse
+       (Code =:= 302) orelse
+       (Code =:= 303) orelse
+       (Code =:= 307) ->
     redirect(Response, Request);
 result(Response = {{_, Code, _}, _, _}, 
-       Request = #request{settings = 
-			  #http_options{autoredirect = true},
-			  method = get}) when (Code =:= 301) orelse 
-					      (Code =:= 302) orelse 
-					      (Code =:= 303) orelse 
-					      (Code =:= 307) ->
+       #request{settings = #http_options{autoredirect = true},
+		method   = get} = Request) when (Code =:= 301) orelse 
+						(Code =:= 302) orelse 
+						(Code =:= 303) orelse 
+						(Code =:= 307) ->
     redirect(Response, Request);
 
 
-result(Response = {{_,503,_}, _, _}, Request) ->
+result({{_,503,_}, _, _} = Response, Request) ->
     status_service_unavailable(Response, Request);
-result(Response = {{_,Code,_}, _, _}, Request) when (Code div 100) =:= 5 ->
+result({{_,Code,_}, _, _} = Response, Request) when ((Code div 100) =:= 5) ->
     status_server_error_50x(Response, Request);
 
 result(Response, Request) -> 
@@ -328,11 +325,11 @@ status_service_unavailable(Response = {_, Headers, _}, Request) ->
     end.
 
 status_server_error_50x(Response, Request) ->
-    {Msg, _} =  format_response(Response),
+    {Msg, _} = format_response(Response),
     {stop, {Request#request.id, Msg}}.
 
 
-redirect(Response = {StatusLine, Headers, Body}, Request) ->
+redirect({StatusLine, Headers, Body} = Response, Request) ->
     {_, Data} =  format_response(Response),
     case Headers#http_response_h.location of
 	undefined ->

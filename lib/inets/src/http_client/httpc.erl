@@ -457,9 +457,14 @@ handle_request(Method, Url,
     end.
 
 handle_request(?SIMPLE_PROFILE = _Profile, 
-	       Request, _Sync, _FullResult, _BodyFormat, 
+	       Request, _Sync, FullResult, BodyFormat, 
 	       SimpleOptions) ->
-    httpc_simple:request(Request, SimpleOptions);
+    case httpc_simple:request(Request, SimpleOptions) of
+	{ok, Result} ->
+	    format_simple_reply(Result, FullResult, BodyFormat);
+	{error, _} = Error ->
+	    Error
+    end;
 
 handle_request(Profile, Request, Sync, FullResult, BodyFormat, _) ->
     case httpc_manager:request(Request, profile_name(Profile)) of
@@ -468,6 +473,23 @@ handle_request(Profile, Request, Sync, FullResult, BodyFormat, _) ->
 	{error, Reason} ->
 	    {error, Reason}
     end.
+
+
+format_simple_reply({{"HTTP/0.9", _, _}, _, BinBody}, 
+		    _FullResult, BodyFormat) ->
+    Body = maybe_format_body(BinBody, BodyFormat),
+    {ok, Body};
+format_simple_reply({StatusLine, Headers, BinBody}, _FullResult, BodyFormat) ->
+    Body = maybe_format_body(BinBody, BodyFormat),
+    format_simple_reply(StatusLine, Headers, Body, BodyFormat).
+    
+format_simple_reply(StatusLine, Headers, Body, true = _FullResult) ->
+    Result = {StatusLine, Headers, Body},
+    {ok, Result};
+format_simple_reply(StatusLine, _Headers, Body, _FullResult) ->
+    {_, Status, _} = StatusLine,
+    Result = {Status, Body},
+    {ok, Result}.
 
 
 handle_answer(RequestId, false = _Sync, _FullResult, _BodyFormat) ->
@@ -572,13 +594,13 @@ get_full_result(Options) ->
     proplists:get_value(full_result, Options).
 
 get_sync(Options, Profile) ->
-    get_non_simple_option(sync, Options, Profile).
+    get_non_simple_option(sync, Options, true, Profile).
 
-get_stream(Options, Profile) ->
-    get_non_simple_option(stream, Options, Profile).
+get_stream(Options, Profile) -> 
+    get_non_simple_option(stream, Options, none, Profile).
 
 get_receiver(Options, Profile) ->
-    get_non_simple_option(sync, Options, Profile).
+    get_non_simple_option(sync, Options, undefined, Profile).
 
 get_proxy(Options, Profile) ->
     get_simple_option(proxy, Options, Profile).
@@ -592,11 +614,11 @@ get_local_ip(Options, Profile) ->
 get_local_port(Options, Profile) ->
     get_simple_option(local_port, Options, Profile).
 
-get_non_simple_option(Key, Options,  Profile) 
+get_non_simple_option(Key, Options, _Default, Profile) 
   when (Profile =/= ?SIMPLE_PROFILE) ->
     proplists:get_value(Key, Options);
-get_non_simple_option(_Key, _Options, _profile) ->
-    undefined.
+get_non_simple_option(_Key, _Options, Default, _Profile) ->
+    Default.
 
 get_simple_option(Key, Options, ?SIMPLE_PROFILE = _Profile) ->
     proplists:get_value(Key, Options);

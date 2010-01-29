@@ -105,7 +105,7 @@
 	 settings,      % #http_options{} - User defined settings
 	 abs_uri,       % string() ex: "http://www.erlang.org"
 	 userinfo,      % string() - optinal "<userinfo>@<host>:<port>"
-	 stream,	% Boolean() - stream async reply?
+	 stream,	% stream() - stream async reply
 	 headers_as_is, % Boolean() - workaround for servers that does
 			% not honor the http standard, can also be used for testing purposes.
 	 started,       % integer() > 0 - When we started processing the request

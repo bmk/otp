@@ -25,9 +25,11 @@
 %%% Internal API
 -export([send/3, is_idempotent/1, is_client_closing/1]).
 
+
 %%%=========================================================================
 %%%  Internal application API
 %%%=========================================================================
+
 %%-------------------------------------------------------------------------
 %% send(MaybeProxy, Request) ->
 %%      MaybeProxy - {Host, Port}
@@ -39,7 +41,8 @@
 %%                                   
 %% Description: Composes and sends a HTTP-request. 
 %%-------------------------------------------------------------------------
-send(SendAddr, #request{scheme = Scheme, socket_opts = SocketOpts} = Request, 
+send(SendAddr, 
+     #request{scheme = Scheme, socket_opts = SocketOpts} = Request, 
      Socket) 
   when is_list(SocketOpts) -> 
     SocketType = socket_type(Scheme), 

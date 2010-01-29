@@ -31,20 +31,24 @@
 	]).
 
 
+-define(MAX_BODY_SIZE,   nolimit).
+-define(MAX_HEADER_SIZE, nolimit).
+
 -record(state, 
 	{
+	 parent, 
 	 socket, 
 	 socket_type, 
 	 options, 
+	 timer, 
 	 mfa, 
 	 status_line, 
 	 headers, 
-	 body
+	 body,
+	 max_body_size   = ?MAX_BODY_SIZE,
+	 max_header_size = ?MAX_HEADER_SIZE
 	}
        ).
-
--define(MAX_HEADER_SIZE, nolimit).
--define(MAX_BODY_SIZE,   nolimit).
 
 
 %%====================================================================
@@ -52,8 +56,8 @@
 %%====================================================================
 
 request(Request, Options) ->
-    Self    = self(),
-    Worker  = spawn_link(fun() -> do_request(Self, Request, Options) end),
+    Self   = self(),
+    Worker = spawn_link(fun() -> request(Self, Request, Options) end),
     receive
 	{Worker, Result} ->
 	    Result;
@@ -68,14 +72,21 @@ request(Request, Options) ->
 %% Internal functions
 %%====================================================================
 
-do_request(Parent, 
+redirect_request(Request, #state{parent = Parent, options = Options}) ->
+    request(Parent, Request, Options).
+
+retry_request(Time, Request, #state{parent = Parent, options = Options}) ->
+    timer:sleep(Time), 
+    request(Parent, Request, Options).
+
+request(Parent, 
 	   #request{address = Address0, scheme  = Scheme} = Request0, 
 	   #simple_options{proxy = Proxy} = Options) ->
     ?hcrv("do request", 
-	  [{address0, Address0}, {sheme, Scheme}, {proxy, Proxy}]),
+	  [{address0, Address0}, {scheme, Scheme}, {proxy, Proxy}]),
     try
 	begin
-	    State1  = #state{options = Options}, 
+	    State1  = #state{parent = Parent, options = Options}, 
 	    Request = handle_request(Request0), 
 	    Address = handle_proxy(Address0, Proxy, Scheme),
 	    State2  = connect(Address, Request, State1),
@@ -247,20 +258,21 @@ do_connect(SocketType, ToAddress, SockOpts,
 %% -------- Send stuff ----------
 
 send(Address, Request, 
-     #state{socket = Socket, socket_type = SocketType} = State) ->
+     #state{socket = Socket} = State) ->
     case httpc_request:send(Address, Request, Socket) of
 	ok ->
-	    activate_once(SocketType, Socket),
-	    maybe_activate_request_timeout(Request);
+	    activate_once(State),
+	    Timer = maybe_activate_request_timeout(Request),
+	    State#state{timer = Timer};
 	{error, Reason} ->
 	    NewReason = {send_failed, Reason},
 	    throw({error, NewReason})
     end.
 
-maybe_activate_request_timeout(#request{settings = Settings}) ->
+maybe_activate_request_timeout(#request{settings = Settings} = Request) ->
     case Settings#http_options.timeout of
 	infinity ->
-	    ignore;
+	    undefined;
 	Timeout ->
 	    ReqId = Request#request.id,
 	    Msg   = {simple_timeout, ReqId},
@@ -270,42 +282,38 @@ maybe_activate_request_timeout(#request{settings = Settings}) ->
     
 %% -------- Await Response stuff ----------
 
-await_response(Timer, Socket, Request) ->
-    State = init_state(Timer, Socket, Request),
-    await_response(Request, State).
+await_response(Request, State) ->
+    State = init_state(Request, State),
+    await_response_loop(Request, State).
 
-init_state(Timer, Socket, #request{sheme = Scheme, settings = Settings}) ->
+init_state(#request{scheme = Scheme, settings = Settings}, State) ->
     SocketType = socket_type(Scheme), 
     case Settings#http_options.version of
         "HTTP/0.9" ->
 	    MFA        = {httpc_response, whole_body, [<<>>, -1]},
 	    StatusLine = {"HTTP/0.9", 200, "OK"},
-	    #status{socket      = Socket, 
-		    socket_type = SocketType, 
-		    timer       = Timer, 
-		    mfa         = MFA,
-		    status_line = StatusLine};
+	    State#state{socket_type = SocketType, 
+			mfa         = MFA,
+			status_line = StatusLine};
         _ ->
             Relaxed    = Settings#http_options.relaxed,
             MFA        = {httpc_response, parse, [?MAX_HEADER_SIZE, Relaxed]},
 	    StatusLine = undefined,
-	    #status{socket      = Socket, 
-		    socket_type = SocketType, 
-		    timer       = Timer, 
-		    mfa         = MFA,
-		    status_line = StatusLine}
+	    State#state{socket_type = SocketType, 
+			mfa         = MFA,
+			status_line = StatusLine}
     end.
 	    
 
-await_response(Request, State) ->
+await_response_loop(Request, State) ->
     receive
 	{Proto, Socket, Data} when (((Proto =:= tcp) orelse (Proto =:= ssl)) 
 				     andalso 
 				    (Socket =:= State#state.socket)) ->
-	   case handle_data(Data, State) of
+	   case handle_data(Data, Request, State) of
 	       {continue, NewState} ->
 		   activate_once(State),
-		   await_response(Timer, Socket, Request, NewState);
+		   await_response_loop(Request, NewState);
 	       {reply, Result} ->
 		   Result
 	   end;
@@ -342,7 +350,7 @@ await_response(Request, State) ->
 
 
 handle_data(Data, 
-	    #request{method = Method} = Request, 
+	    #request{method = Method} = _Request, 
 	    #state{mfa         = {Module, Function, Args},
 		   status_line = StatusLine} = State) ->
 
@@ -354,7 +362,7 @@ handle_data(Data,
     try Module:Function([Data | Args]) of
 	{ok, Result} ->
 	    ?hcrd("data processed - ok", []),
-	    handle_http_msg(Result, State);
+	    handle_http_msg(Result, Request, State);
 	
 	{_, whole_body, _} when Method =:= head ->
 	    ?hcrd("data processed - whole body", []),
@@ -384,6 +392,175 @@ handle_data(Data,
     end.
 	
 
+handle_http_msg({Version, StatusCode, ReasonPharse, Headers, Body},
+		Request, State) ->
+    case Headers#http_response_h.'content-type' of
+        "multipart/byteranges" ++ _Param ->
+            Reason = {not_yet_implemented, multypart_byteranges},
+	    throw({error, Reason});
+        _ ->
+            StatusLine = {Version, StatusCode, ReasonPharse},
+            handle_http_body(Body, Request, 
+                             State#state{status_line = StatusLine,
+                                         headers     = Headers})
+    end;
+
+handle_http_msg({ChunkedHeaders, Body}, Request, 
+		#state{headers = Headers} = State) ->
+    NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
+    handle_response(State#state{headers = NewHeaders, body = Body});
+
+handle_http_msg(Body, Request, State) ->
+    handle_response(Request, State#state{body = Body}).
+
+
+handle_http_body(<<>>, Request, #state{status_line = {_,304, _}} = State) ->
+    ?hcrt("handle_http_body - 304", []),
+    handle_response(Request, State#state{body = <<>>});
+
+handle_http_body(<<>>, Request, #state{status_line = {_,204, _}} = State) ->
+    ?hcrt("handle_http_body - 204", []),
+    handle_response(Request, State#state{body = <<>>});
+
+handle_http_body(<<>>, #request{method = head} = Request, State) ->
+    ?hcrt("handle_http_body - head", []),
+    handle_response(Request, State#state{body = <<>>});
+
+handle_http_body(Body, Request, 
+		 #state{headers         = Headers,
+			max_body_size   = MaxBodySize,
+			max_header_size = MaxHdrSize,
+			status_line     = {_,Code, _}} = State) ->
+    ?hcrt("handle_http_body",
+          [{max_body_size,   MaxBodySize}, 
+	   {max_header_size, MaxHdrSize}, 
+	   {headers,         Headers}, 
+	   {code,            Code}]),
+    TransferEnc = Headers#http_response_h.'transfer-encoding',
+    case case_insensitive_header(TransferEnc) of
+        "chunked" ->
+            ?hcrt("handle_http_body - chunked", []),
+            case http_chunk:decode(Body, MaxBodySize, MaxHdrSize, 
+				   {Code, Request}) of
+                {Module, Function, Args} ->
+                    ?hcrt("handle_http_body - new mfa",
+                          [{module,   Module},
+                           {function, Function},
+                           {args,     Args}]),
+		    State#state{mfa = {Module, Function, Args}};
+
+                {ok, {ChunkedHeaders, NewBody}} ->
+                    ?hcrt("handle_http_body - new body",
+                          [{chunked_headers, ChunkedHeaders},
+                           {new_body,        NewBody}]),
+                    NewHeaders = http_chunk:handle_headers(Headers,
+                                                           ChunkedHeaders),
+                    handle_response(State#state{headers = NewHeaders,
+                                                body    = NewBody})
+            end;
+
+        Encoding when is_list(Encoding) ->
+            ?hcrd("handle_http_body - encoding", [{encoding, Encoding}]),
+	    Reason = {unknown_encoding, Encoding}, 
+	    Error  = {error, Reason}, 
+	    {reply, Error};
+
+        _ ->
+            ?hcrt("handle_http_body - other", []),
+            Length =
+                list_to_integer(Headers#http_response_h.'content-length'),
+            case ((Length =< MaxBodySize) orelse (MaxBodySize =:= nolimit)) of
+                true ->
+                    case httpc_response:whole_body(Body, Length) of
+                        {ok, Body} ->
+                            handle_response(Request, State#state{body = Body});
+                        MFA ->
+                            {continue, State#state{mfa = MFA}}
+                    end;
+                false ->
+		    Reason = {body_too_big, Length}, 
+		    Error  = {error, Reason}, 
+		    {reply, Error}
+            end
+    end.
+
+
+handle_response(Request, 
+		#state{status_line  = StatusLine,
+                       headers      = Headers,
+                       body         = Body} = State) ->
+
+    ?hcrd("handle response", [{status_line, StatusLine}]),
+
+    case httpc_response:result({StatusLine, Headers, Body}, Request) of
+
+        %% 100-continue
+        continue ->
+            ?hcrd("handle response - continue", []),
+            %% Send request body
+            {_, RequestBody} = Request#request.content,
+            http_transport:send(socket_type(Session#tcp_session.scheme),
+                                            Session#tcp_session.socket,
+                                RequestBody),
+            %% Wait for next response
+            activate_once(Session),
+            Relaxed = (Request#request.settings)#http_options.relaxed,
+            MFA = {httpc_response, parse, 
+		   [State#state.max_header_size, Relaxed]},
+            {continue, State#state{mfa         = MFA,
+				   status_line = undefined,
+				   headers     = undefined,
+				   body        = undefined}};
+
+
+        %% Ignore unexpected 100-continue response and receive the
+        %% actual response that the server will send right away.
+        {ignore, Data} ->
+            ?hcrd("handle response - ignore", [{data, Data}]),
+            Relaxed = (Request#request.settings)#http_options.relaxed,
+            MFA     = {httpc_response, parse,
+                       [State#state.max_header_size, Relaxed]},
+            NewState = State#state{mfa         = MFA,
+                                   status_line = undefined,
+                                   headers     = undefined,
+                                   body        = undefined},
+	    handle_data(Data, NewState);
+
+
+	%% We only send *one* request in simple, so Data must 
+	%% be <<>> for redirect, retry and ok
+
+        %% On a redirect or retry the current request becomes
+        %% obsolete and the manager will create a new request
+        %% with the same id as the current.
+        {redirect, NewRequest, _Data} ->
+            ?hcrt("handle response - redirect",
+                  [{new_request, NewRequest}]),
+            redirect_request(NewRequest, State);
+
+        {retry, {Time, NewRequest}, _Data} ->
+            ?hcrt("handle response - retry",
+                  [{time, Time}, {new_request, NewRequest}]),
+            retry_request(Time, NewRequest, State);
+	
+	
+        {ok, Msg, Data} ->
+            ?hcrd("handle response - ok", []),
+	    case Msg of
+		{_Id, {error, _} = Error} ->
+		    {reply, Error};
+		{_Id, 
+		 end_stream(StatusLine, Request),
+		 NewState = answer_request(Request, Msg, State),
+		 handle_queue(NewState, Data);
+		 
+		 {stop, Msg} ->
+			?hcrd("handle response - stop", [{msg, Msg}]),
+			case 
+            end_stream(StatusLine, Request),
+            NewState = answer_request(Request, Msg, State),
+            {stop, normal, NewState}
+    end.
 
 %%====================================================================
 %% Misc utility functions
@@ -391,6 +568,7 @@ handle_data(Data,
 
 activate_once(#state{socket = Socket, socket_type = SocketType}) ->
     http_transport:setopts(SocketType, Socket, [{active, once}]).
+
 
 close(#state{socket = Socket, socket_type = SocketType}) ->
     close(SocketType, Socket).
@@ -408,5 +586,5 @@ socket_type(http) ->
 socket_type(https) ->
     {ssl, []}. %% Dummy value ok for ex setopts that does not use this value
 
-t() ->
-    http_util:timestamp().
+%% t() ->
+%%     http_util:timestamp().
