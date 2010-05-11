@@ -80,8 +80,8 @@ retry_request(Time, Request, #state{parent = Parent, options = Options}) ->
     request(Parent, Request, Options).
 
 request(Parent, 
-	   #request{address = Address0, scheme  = Scheme} = Request0, 
-	   #simple_options{proxy = Proxy} = Options) ->
+	#request{address = Address0, scheme  = Scheme} = Request0, 
+	#simple_options{proxy = Proxy} = Options) ->
     ?hcrv("do request", 
 	  [{address0, Address0}, {scheme, Scheme}, {proxy, Proxy}]),
     try
@@ -96,6 +96,10 @@ request(Parent,
 	    close(State3)
 	end
     catch
+	throw:{redirect, NewReqeust, State} ->
+	    redirect_request(NewReqeust, State);
+	throw:{retry, Time, NewReqeust, State} ->
+	    retry_request(Time, NewReqeust, State);
 	throw:Error ->
 	    Parent ! {self(), Error}
     end,
@@ -106,25 +110,18 @@ handle_request(
     Request1 = update_request_id(Request0),
     Hdrs0    = Request1#request.headers, 
     Hdrs1    = Hdrs0#http_request_h{connection = undefined},
-    Request2 = Request1#request{headers = Hdrs1}, 
-    Request2;
-
+    Request1#request{id = make_ref(), headers = Hdrs1};
 handle_request(
   #request{settings = #http_options{version = "HTTP/1.0"}} = Request0) ->
     Request1 = update_request_id(Request0),
     Hdrs0    = Request1#request.headers, 
     Hdrs1    = Hdrs0#http_request_h{connection = "close"},
-    Request2 = Request1#request{headers = Hdrs1}, 
-    Request2;
+    Request1#request{id = make_ref(), headers = Hdrs1}; 
 handle_request(Request0) ->
     Request1 = update_request_id(Request0),
     Hdrs0    = Request1#request.headers, 
     Hdrs1    = Hdrs0#http_request_h{connection = "close"},
-    Request2 = Request1#request{headers = Hdrs1}, 
-    Request2.
-    
-update_request_id(Request) ->
-    Request#request{id = make_ref()}.
+    Request1#request{id = make_ref(), headers = Hdrs1}.
 
 
 
@@ -205,7 +202,7 @@ is_no_proxy_dest_address(Dest, AddressPart) ->
 connect(Address, 
 	#request{settings    = Settings,
 		 socket_opts = SockOpts} = Request, 
-       #state{options = Options} = State) ->
+	#state{options = Options} = State) ->
     SocketType  = socket_type(Request),
     ConnTimeout = Settings#http_options.connect_timeout,
     Socket      = connect(SocketType, Address, SockOpts, Options, ConnTimeout),
@@ -257,8 +254,7 @@ do_connect(SocketType, ToAddress, SockOpts,
 
 %% -------- Send stuff ----------
 
-send(Address, Request, 
-     #state{socket = Socket} = State) ->
+send(Address, Request, #state{socket = Socket} = State) ->
     case httpc_request:send(Address, Request, Socket) of
 	ok ->
 	    activate_once(State),
@@ -319,22 +315,10 @@ await_response_loop(Request, State) ->
 	   end;
 
 	{tcp_closed, _} ->
-	    case State#state.mfa of
-		{_, whole_body, Args} ->
-		    handle_response(State#state{body = hd(Args)});
-		_ ->
-		    Reason = {remote_close, State#state.body},
-		    {error, Reason}
-	    end;
+	    handle_closed(State);
 
 	{ssl_closed, _} ->
-	    case State#state.mfa of
-		{_, whole_body, Args} ->
-		    handle_response(State#state{body = hd(Args)});
-		_ ->
-		    Reason = {remote_close, State#state.body},
-		    {error, Reason}
-	    end;
+	    handle_closed(State);
 
 	{tcp_error, _, _} = Reason ->
 	    {error, {Reason, State#state.body}};
@@ -347,6 +331,20 @@ await_response_loop(Request, State) ->
 	    {error, Reason}
 
     end.
+
+
+handle_closed(#state{mfa = {_, whole_body, Args}} = State) ->
+    case handle_response(State#state{body = hd(Args)}) of
+	{stop, Msg} ->
+	    Msg;
+	{ok, Msg, Data} ->
+	    Msg;
+	Crap ->
+	    {error, {unexpected_result, Crap}}
+    end;
+handle_closed(#state{body = Body}) ->
+    Reason = {remote_close, State#state.body},
+    {error, Reason}.
 
 
 handle_data(Data, 
@@ -492,7 +490,8 @@ handle_response(Request,
 
     ?hcrd("handle response", [{status_line, StatusLine}]),
 
-    case httpc_response:result({StatusLine, Headers, Body}, Request) of
+    Response = {StatusLine, Headers, Body}, 
+    case httpc_response:result(Response, Request) of
 
         %% 100-continue
         continue ->
@@ -530,22 +529,35 @@ handle_response(Request,
 	%% We only send *one* request in simple, so Data must 
 	%% be <<>> for redirect, retry and ok
 
-        %% On a redirect or retry the current request becomes
-        %% obsolete and the manager will create a new request
-        %% with the same id as the current.
+
         {redirect, NewRequest, _Data} ->
             ?hcrt("handle response - redirect",
                   [{new_request, NewRequest}]),
-            redirect_request(NewRequest, State);
+            throw({redirect, NewRequest, State});
 
         {retry, {Time, NewRequest}, _Data} ->
             ?hcrt("handle response - retry",
                   [{time, Time}, {new_request, NewRequest}]),
-            retry_request(Time, NewRequest, State);
+            throw({retry, Time, NewRequest, State});
 	
 	
         {ok, Msg, Data} ->
+	    %% Msg = {request_id(), stream_end, headers()} | 
+	    %%       {request_id(), saved_to_file} | 
+	    %%       {request_id(), ActualMsg} | 
+	    %%       Error
+	    %% Error = {request_id(), {error, Reason}}
             ?hcrd("handle response - ok", []),
+	    case Msg of
+		{_Id, stream_end, Hdrs} -> 
+		    %% As we do not allow streaming (yet), 
+		    %% this should not happen...
+		    Reason = {unexpected_stream, Hdrs}, 
+		    Error  = {error, Reason},
+		    {reply, Error};
+		{_Id, {error, _} = Error} ->
+		    {reply, Error};
+		{_Id, Msg} ->
 	    case Msg of
 		{_Id, {error, _} = Error} ->
 		    {reply, Error};

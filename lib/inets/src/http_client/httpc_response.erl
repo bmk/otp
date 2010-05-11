@@ -31,6 +31,7 @@
 -export([parse_version/1, parse_status_code/1, parse_reason_phrase/1,
 	 parse_headers/1, whole_body/1, whole_body/2]).
 
+
 %%%=========================================================================
 %%%  API
 %%%=========================================================================
@@ -84,27 +85,27 @@ whole_body(Body, Length) ->
 %%                                   
 %% Description: Checks the status code ...
 %%-------------------------------------------------------------------------
-result(Response = {{_, Code,_}, _, _}, 
-       Request = #request{stream = Stream}) 
+result({{_, Code,_}, _, _} = Response, 
+       #request{stream = Stream} = Request) 
   when ((Code =:= 200) orelse (Code =:= 206)) andalso (Stream =/= none) ->
     stream_end(Response, Request);
 
-result(Response = {{_,100,_}, _, _}, Request) ->
+result({{_,100,_}, _, _} = Response, Request) ->
     status_continue(Response, Request);
 
 %% In redirect loop
-result(Response = {{_, Code, _}, _, _}, Request =
+result({{_, Code, _}, _, _} = Response, 
        #request{redircount = Redirects,
-		settings = #http_options{autoredirect = true}}) 
+		settings   = #http_options{autoredirect = true}} = Request) 
   when ((Code div 100) =:= 3) andalso (Redirects > ?HTTP_MAX_REDIRECTS) ->
     transparent(Response, Request);
 
 %% multiple choices 
-result(Response = {{_, 300, _}, _, _}, 
+result({{_, 300, _}, _, _} = Response, 
        #request{settings = #http_options{autoredirect = true}} = Request) ->
     redirect(Response, Request);
 
-result(Response = {{_, Code, _}, _, _}, 
+result({{_, Code, _}, _, _} = Response, 
        #request{settings = #http_options{autoredirect = true},
 		method   = head} = Request) 
   when (Code =:= 301) orelse
@@ -112,7 +113,7 @@ result(Response = {{_, Code, _}, _, _},
        (Code =:= 303) orelse
        (Code =:= 307) ->
     redirect(Response, Request);
-result(Response = {{_, Code, _}, _, _}, 
+result({{_, Code, _}, _, _} = Response, 
        #request{settings = #http_options{autoredirect = true},
 		method   = get} = Request) when (Code =:= 301) orelse 
 						(Code =:= 302) orelse 
@@ -128,6 +129,19 @@ result({{_,Code,_}, _, _} = Response, Request) when ((Code div 100) =:= 5) ->
 
 result(Response, Request) -> 
     transparent(Response, Request).
+
+
+%%-------------------------------------------------------------------------
+%% send(Receiver, Msg) ->
+%%   Receiver - pid() | function() | MFA
+%%   MFA - {Module, Function, Args}
+%%   Module - atom()
+%%   Function - atom()
+%%   Args - lists()
+%%   Msg - term()
+%%                                   
+%% Description: Send (deliver) the message (Msg) to the receiver (Receiver)
+%%-------------------------------------------------------------------------
 
 send(Receiver, Msg) when is_pid(Receiver) ->
     Receiver ! {http, Msg};

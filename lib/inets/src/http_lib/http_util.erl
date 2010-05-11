@@ -112,11 +112,11 @@ timestamp() ->
     A*1000000000+B*1000+(C div 1000).
 
 timeout(Timeout, Started) ->
-    %% NewTimeout = Timeout - (timestamp() - Started),
-    case Timeout - (timestamp() - Started) of
-	NewTimeout when Timeout > 0 ->
+    NewTimeout = Timeout - (timestamp() - Started),
+    if
+	NewTimeout > 0 ->
 	    NewTimeout;
-	_ ->
+	true ->
 	    0
     end.
     
