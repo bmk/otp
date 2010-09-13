@@ -143,12 +143,18 @@
     {load_module, megaco_binary_transformer_prev3b, soft_purge, soft_purge, []},
     {load_module, megaco_binary_transformer_prev3c, soft_purge, soft_purge, []},
     {load_module, megaco_sdp, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3c, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v3, soft_purge, soft_purge, []}
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   }
  ],
@@ -159,12 +165,18 @@
     {load_module, megaco_binary_transformer_prev3b, soft_purge, soft_purge, []},
     {load_module, megaco_binary_transformer_prev3c, soft_purge, soft_purge, []},
     {load_module, megaco_sdp, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v1, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v2, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3a, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3b, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_prev3c, soft_purge, soft_purge, []},
-    {load_module, megaco_text_gen_v3, soft_purge, soft_purge, []}
+    {load_module, megaco_compact_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v1, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v2, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3a, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3b, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_prev3c, soft_purge, soft_purge, []},
+    {load_module, megaco_compact_text_encoder_v3, soft_purge, soft_purge, []},
+    {load_module, megaco_pretty_text_encoder_v3, soft_purge, soft_purge, []}
    ]
   }
  ]
