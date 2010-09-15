@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="latin1" ?>
+<?xml version="1.0" encoding="iso-8859-1" ?>
 <!DOCTYPE chapter SYSTEM "chapter.dtd">
 
 <chapter>
@@ -43,22 +43,27 @@
 
     <p>We have made four different measurements of our Erlang/OTP 
       implementation of the Megaco/H.248 protocol stack, in order to compare 
-      our different encoders/decoders. The result of each one is summarized 
+      our different codecs. The result of each one is summarized 
       in the table below.</p>
 
-    <p>The result above are the fastest 
-      of these configurations for each codec. The figures presented are 
-      the average of all used messages.</p>
+    <p>The results shown are the fastest of these configurations for each 
+      codec. The figures presented are the average of all used messages.</p>
 
-    <p>For comparison, also included are first, performance figures with
-      megaco (including the measurement software) and asn1 applications 
-      hipe-compiled (second figure in the time columns, note that per bin 
-      decode had some issues so those figures are not included), and second, 
-      performance figures where the flex driver was built as 
-      <c>non-reentrant</c> flex
-      (third figure in the time columns, 
-      only valid for text codecs using the flex-scanner, 
-      figures within parenthesis). </p>
+    <p>For comparison, also included are: </p>
+    <list type="bulleted">
+      <item>
+        <p>performance figures with the <em>megaco</em> 
+	  (including the measurement software) and the <em>asn1</em> 
+	  applications hipe-compiled (second figure 
+          in the time columns, note that per bin decode had some issues 
+          so those figures are not included). </p>
+      </item>
+      <item>
+        <p>performance figures where the flex driver was built as 
+          <c>non-reentrant</c> flex (third figure in the time columns, 
+          only valid for text codecs using the flex-scanner. </p>
+      </item>
+    </list> 
 
     <table>
       <row>
@@ -205,7 +210,8 @@
     <p>The real difference is instead in system characteristics, which 
       is best shown with the mstone1 test. </p>
     <p>When running SMP erlang on a multi-core machine the "throughput"
-      is significantly higher. The mstone1 test is an extreme test,
+      with a reentrant flex-scanner is significantly higher. 
+      The mstone1 test is an extreme test,
       but it shows what is gained by using the reentrant flex-scanner. </p>
     <image file="mstone1.jpg">
         <icaption>MStone1 with mstone1.sh -d flex -s 4</icaption>

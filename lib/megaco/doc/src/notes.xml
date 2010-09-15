@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="latin1" ?>
+<?xml version="1.0" encoding="iso-8859-1" ?>
 <!DOCTYPE chapter SYSTEM "chapter.dtd">
 
 <chapter>
@@ -34,6 +34,70 @@
     bugfixes for every release of Megaco. Each release of Megaco
     thus constitutes one section in this document. The title of each
     section is the version number of Megaco.</p>
+
+  <section>
+    <title>Megaco 3.14.1.2</title>
+
+    <p>Version 3.14.1.2 supports code replacement in runtime from/to
+      version 3.14.1.1, 3.14.1, 3.14, 3.13, 3.12 and 3.11.3.</p>
+
+    <section>
+      <title>Improvements and new features</title>
+
+<!--
+      <p>-</p>
+-->
+
+      <list type="bulleted">
+        <item>
+          <p>Some minor cleanup of the 
+            <seealso marker="megaco_performance">performance</seealso> 
+            chapter. </p>
+          <p>Own Id: OTP-8845</p>
+        </item>
+
+     </list>
+
+    </section>
+
+    <section>
+      <title>Fixed bugs and malfunctions</title>
+      <p>-</p>
+
+<!--
+      <list type="bulleted">
+        <item>
+          <p>A race condition when, during high load, processing
+            both the original and a resent message and delivering
+            this as two separate messages to the user. </p>
+          <p>Note that this solution only protects against multiple
+            reply deliveries! </p>
+          <p>Own Id: OTP-8529</p>
+          <p>Aux Id: Seq 10915</p>
+        </item>
+
+        <item>
+          <p>Fix shared libraries installation. </p>
+          <p>The flex shared lib(s) were incorrectly installed as data 
+            files. </p>
+          <p>Peter Lemenkov</p>
+          <p>Own Id: OTP-8627</p>
+        </item>
+
+        <item>
+          <p>Eliminated a possible race condition while creating 
+            pending counters. </p>
+          <p>Own Id: OTP-8634</p>
+	  <p>Aux Id: Seq 11579</p>
+        </item>
+
+      </list>
+-->
+
+    </section>
+
+  </section> <!-- 3.14.1.2 -->
+
 
   <section>
     <title>Megaco 3.14.1.1</title>
