@@ -71,3 +71,8 @@ GIF_FILES = \
 	call_flow.gif \
 	call_flow_cont.gif \
         mstone1.gif
+
+IMG_FILES = \
+	mstone1.jpg \
+	$(GIF_FILES)
+
