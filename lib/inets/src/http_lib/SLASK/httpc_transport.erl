@@ -17,11 +17,12 @@
 %% %CopyrightEnd%
 %%
 
--module(http_transport).
+-module(httpc_transport).
 
 -export([behaviour_info/1]).
 
 -export([
+	 which_transport/1, 
 	 start/2, 
 	 connect/3, connect/4, 
 	 send/2,
@@ -34,16 +35,9 @@
 	 negotiate/2
 	]).
 
--export([
-	 which_transport/1, 
-	 ipv4_name/1, 
-	 ipv6_name/1, 
-	 listen_sock_opts/2
-	]).
 
-
--record(http_transport_state,  {mod, mod_state}).
--record(http_transport_socket, {mod, sock}).
+-record(httpc_transport_state,  {mod, mod_state}).
+-record(httpc_transport_socket, {mod, sock}).
 
 
 %%%=========================================================================
@@ -52,18 +46,16 @@
 
 behaviour_info(callbacks) ->
     [
-     {init,               1},
-     {handle_listen,      3}, 
-     {handle_listen_args, 6}, 
-     {handle_connect,     5}, 
-     {handle_close,       1}, 
-     {handle_send,        2}, 
-     {handle_setopts,     2}, 
-     {handle_getopts,     2}, 
-     {handle_getstat,     1}, 
-     {handle_peername,    1}, 
-     {handle_sockname,    1}, 
-     {handle_negotiate,   2} 
+     {init,             1},
+     {handle_connect,   5}, 
+     {handle_close,     1}, 
+     {handle_send,      2}, 
+     {handle_setopts,   2}, 
+     {handle_getopts,   2}, 
+     {handle_getstat,   1}, 
+     {handle_peername,  1}, 
+     {handle_sockname,  1}, 
+     {handle_negotiate, 2} 
     ];
 behaviour_info(_Other) ->
     undefined.
@@ -71,12 +63,17 @@ behaviour_info(_Other) ->
 
 %%----------------------------------------------------------------------
 
+which_transport(ip_comm) ->
+    httpc_ipcomm_transport;
+which_transport(_) ->
+    httpc_ssl_transport.
+
+
 start(Mod, Opts) ->
     try Mod:init(Opts) of
 	{ok, ModState} ->
-	    State = #http_transport_state{mod       = Mod, 
-					  mod_state = ModState},
-	    {ok, State};
+	    #httpc_transport_state{mod       = Mod, 
+				   mod_state = ModState};
 	Error ->
 	    Error
     catch
@@ -106,46 +103,6 @@ connect(#httpc_transport_state{mod       = Mod,
     
     end.
 
-
-listen(#httpc_transport_state{mod       = Mod, 
-			      mod_state = ModState}, 
-       Addr, Port, MaybeFD) ->
-    IpFamilyDefault = httpd_conf:lookup(Addr, Port, ipfamily, inet6fb4),
-    BaseOpts        = [{backlog, 128}, {reuseaddr, true}],
-    try Mod:handle_listen_args(Addr, Port, MaybeFD, BaseOpts, IpFamilyDefault) of
-	{NewPort, Opts, inet6fb4} when is_integer(NewPort) andalso 
-				       (newPort >= 0) andalso 
-				       is_lists(Opts) ->
-	    %% We should try to use IPv6 first, 
-	    %% and only if that fails, use IPv4
-	    Opts2 = [inet6 | Opts], 
-	    case (catch Mod:handle_listen(ModState, NewPort, Opts2)) of
-		{error, {no_ipv6_support, _} ->
-		    Opts3 = [inet | Opts], 
-		    Mod:handle_listen(ModState, NewPort, Opts3);
-
-		%% This is when a given hostname has resolved to a 
-                %% IPv4-address. The inet6-option together with a 
-                %% {ip, IPv4} option results in badarg
-		{'EXIT', _} ->
-		    Opts3 = [inet | Opts], 
-		    Mod:handle_listen(ModState, NewPort, Opts3);
-
-		Other ->
-		    Other
-	    end;
-	
-	{NewPort, Opts, IpFamily} when is_integer(NewPort) andalso 
-				       (newPort >= 0) andalso 
-				       is_lists(Opts) ->
-	    Opts2 = [IpFamily | Opts],
-	    Mod:handle_listen(ModState, NewPort, Opts2)
-    catch
-	throw:{error, Reason} ->
-	    {error, Reason};
-	T:E ->
-	    {error, {T, E}}
-    end.
 
 send(#httpc_transport_socket{mod = Mod, sock = Socket}, Message) ->
     try
@@ -252,62 +209,10 @@ negotiate(#httpc_transport_socket{mod = Mod, sock = Socket}, Timeout) ->
     end.
 
     
-
-%%%========================================================================
-%%% Behaviour utility functions
-%%%========================================================================
-
-
-which_transport(ip_comm) ->
-    http_ipcomm_transport;
-which_transport(_) ->
-    http_ssl_transport.
-
-
-%% -- sock_opts --
-listen_sock_opts(undefined, Opts) -> 
-    listen_sock_opts(Opts);
-listen_sock_opts(any = Addr, Opts) -> 
-    listen_sock_opts([{ip, Addr} | Opts]);
-listen_sock_opts(Addr, Opts) ->
-    listen_sock_opts([{ip, Addr} | Opts]).
-
-listen_sock_opts(Opts) ->
-    [{packet, 0}, {active, false} | Opts].
-
-
-
-%%-------------------------------------------------------------------------
-%% ipv4_name(Ipv4Addr) -> string()
-%% ipv6_name(Ipv6Addr) -> string()
-%%     Ipv4Addr = ip4_address()
-%%     Ipv6Addr = ip6_address()
-%%     
-%% Description: Returns the local hostname. 
-%%-------------------------------------------------------------------------
-ipv4_name({A, B, C, D}) ->
-    integer_to_list(A) ++ "." ++
-        integer_to_list(B) ++ "." ++
-        integer_to_list(C) ++ "." ++
-        integer_to_list(D).
-
-ipv6_name({A, B, C, D, E, F, G, H}) ->
-    http_util:integer_to_hexlist(A) ++ ":"++ 
-        http_util:integer_to_hexlist(B) ++ ":" ++  
-        http_util:integer_to_hexlist(C) ++ ":" ++ 
-        http_util:integer_to_hexlist(D) ++ ":" ++  
-        http_util:integer_to_hexlist(E) ++ ":" ++  
-        http_util:integer_to_hexlist(F) ++ ":" ++  
-        http_util:integer_to_hexlist(G) ++ ":" ++  
-        http_util:integer_to_hexlist(H).
-
-
-%%%========================================================================
-%%% Internal functions
-%%%========================================================================
-
 eoptions(Opts) ->
     eoptions(Opts, []).
 eoptions(Opts, Extra) ->
     {error, {eoptions, Opts, Extra}}.
 
+ipv4_name(Addr) -> http_transport:ipv4_name(Addr).
+ipv6_name(Addr) -> http_transport:ipv6_name(Addr).
