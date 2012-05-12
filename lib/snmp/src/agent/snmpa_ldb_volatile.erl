@@ -25,23 +25,23 @@
 	 stop/0, 
 	 verbosity/1,
 	 variable_get/1, 
-	 variable_set/2, 
-	 /2,
-	 /1
+	 variable_set/2
 	]).
 
 %% snmpa_ldb callback functions
 -export([
-	 init/1,
-	 insert/3, 
-	 delete/2,
-	 match/3, 
-	 lookup/2,
-	 close/1
+	 open/1,
+	 handle_insert/3, 
+	 handle_delete/2,
+	 handle_match/3, 
+	 handle_lookup/2,
+	 handle_close/1
 	]).
 
 -define(NAME, ?MODULE).
 -define(TAB,  ?MODULE).
+
+-record(state, {tab}).
 
 start_link(Opts) ->
     snmpa_ldb:start_link(?NAME, ?MODULE, Opts).
@@ -58,35 +58,42 @@ variable_get(Variable) ->
 variable_set(Variable, Value) ->
     snmpa_ldb:variable_set(?NAME, Variable, Value).
 
+variable_delete(Variable) ->
+    snmpa_ldb:variable_delete(?NAME, Variable).
+
+variable_inc(Variable, N) ->
+    snmpa_ldb:variable_inc(?NAME, Variable, N).
+
 
 %% -------------------------------------------------------------------- 
 %% snmpa_ldb callback functions
 
-init(_) ->
+open(_) ->
     Tab = ets:new(?TAB, [set, protected]),
     {ok, #state{tab = Tab}}.
 
+handle_close(#state{tab = Tab}) ->
+    ets:delete(Tb),
+    ok.
 
-insert(#state{tab = Tab}, Key, Value) ->
+handle_insert(#state{tab = Tab}, Key, Value) ->
     ets:insert(Tab, {Key, Value}),
-    true.
+    ok.
 
-delete(#state{tab = Tab}, Key) ->
+handle_delete(#state{tab = Tab}, Key) ->
     ets:delete(Tab, Key),
-    true.
+    ok.
 
-match(#state{tab = Tab}, Key, Pattern) ->
-    ets:match(Ets, {{Key, '_'}, {Pattern, '_', '_'}}).
-
-lookup(#state{tab = Tab}, Key) ->
+handle_lookup(#state{tab = Tab}, Key) ->
     case ets:lookup(Tab, Key) of
 	[{_, Value}] ->
-	    {value, Value};
+	    {ok, Value};
 	[] ->
 	    undefined
     end.
 
-close(#state{tab = Tab}) ->
-    ets:delete(Tb).
+handle_match(#state{tab = Tab}, Pattern) ->
+    {ok, ets:match(Ets, Pattern)}.
+
 
 

@@ -22,7 +22,6 @@
 
 %% External exports
 %% Avoid warning for local function demonitor/1 clashing with autoimported BIF.
--compile({no_auto_import,[demonitor/1]}).
 -export([start_link/2, stop/0, verbosity/1]).
 
 -export([
@@ -40,39 +39,41 @@
 -include("snmp_verbosity.hrl").
 
 
--record(state,
-        {
-          active_count = 0,
-          writer       = false, % Active or waiting write-lock
-          waiting      = []     % Waiting lockers
-	 }
-       ).
--record(locker, {pid, from, mon_ref, type, state}).
-
--define(MK_TABLE_NAME(Name, Post), 
-	list_to_atom(atom_to_list(Name) ++ "_" ++ atom_to_list(Post))).
+-define(MK_TABLE_NAME(Pre, Post), 
+	list_to_atom(atom_to_list(Pre) ++ "_" ++ atom_to_list(Post))).
 -define(MK_CACHE_NAME(Name),  ?MK_TABLE_NAME(Name, cache)).
 -define(MK_LOCKER_NAME(Name), ?MK_TABLE_NAME(Name, locker)).
 
 
 -ifndef(default_verbosity).
--define(default_verbosity,silence).
+-define(default_verbosity, silence).
 -endif.
 
 -ifdef(snmp_debug).
--define(GS_START_LINK(Name, Module, Prio, Opts),
+-define(GS_START_LINK(Name, Module, Opts),
         gen_server:start_link({local, Name}, ?MODULE,
-                              [Module, Prio, Opts], [{debug,[trace]}])).
+                              [Module, Opts], [{debug,[trace]}])).
 -else.
--define(GS_START_LINK(Prio, Opts),
+-define(GS_START_LINK(Name, Module, Opts),
         gen_server:start_link({local, Name}, ?MODULE,
-                              [Module, Prio, Opts], [])).
+                              [Module, Opts], [])).
 -endif.
 
 
 %%%-------------------------------------------------------------------
 %%% API
 %%%-------------------------------------------------------------------
+behaviour_info(callbacks) ->
+    [{init,        4}, 
+     {handle_insert,      1},
+     {handle_delete,      2},
+     {handle_lookup, 1},
+     {, 2},
+     {info,              1}, 
+     {verbosity,         2}];
+behaviour_info(_) ->
+    undefined.
+
 start_link(Name, Module, Opts) -> 
     ?d("start_link -> entry with"
        "~n   Name:   ~p"
@@ -108,18 +109,18 @@ variable_get(Name, Variable) ->
 
 
 variable_set(Name, Variable, Value) ->
-    {DBAlias, NClients, DBModule, State} = lock(Name, write),
+    {Alias, NClients, Module, State} = lock(Name, write),
     Reply = 
 	try
 	    begin
-		DBModule:insert(State, Variable, Value)
+		Module:insert(State, Variable, Value)
 	    end
 	catch
 	    T:E ->
 		{error, {insert_failed, T, E}}
 	end,
     unlock(Name),
-    notify_clients(DBAlias, insert, NClients), 
+    notify_clients(Alias, insert, NClients), 
     Reply.
 
 
@@ -134,40 +135,6 @@ notify_clients(DBAlias, Event, [{Client, Module, Extra}|Clients]) ->
     (catch Module:snmp_ldb_event(Client, DBAlias, Event, Extra)),
     notify_clients(DBAlias, Event, Clients).
     
-
-%% get_targets(Pat, TargetsFun) ->
-%%     lock(read), % Get a read lock
-%%     Targets = 
-%% 	case ets:lookup(?CACHE, state) of
-%% 	    [{state, invalid}] ->
-%% 		upgrade_lock(), % Upgrade to write lock
-%% 		%% Make sure it's still invalid
-%% 		case ets:lookup(?CACHE, state) of
-%% 		    [{state, invalid}] ->
-%% 			insert_all( TargetsFun() ),
-%% 			ets:insert(?CACHE, {state, valid});
-%% 		    _ ->
-%% 			ok % This means that someone got there before us
-%% 		end,
-%% 		downgrade_lock(), % Downgrade to read lock
-%% 		get_targets(Pat);
-%% 	    [{state, valid}] ->
-%% 		get_targets(Pat)
-%% 	end,
-%%     unlock(), % Release the read lock
-%%     Targets.
-
-%% invalidate() ->
-%%     lock(write),
-%%     case ets:lookup(?CACHE, state) of
-%% 	[{state, invalid}] ->
-%% 	    ok;
-%% 	[{state, valid}] ->
-%% 	    delete_all(),
-%% 	    ets:insert(?CACHE, {state, invalid})
-%%     end,
-%%     unlock(),
-%%     ok.
 
 
 %%%-------------------------------------------------------------------
@@ -196,243 +163,362 @@ init([Name, Module, Opts]) ->
 
 
 do_init(Name, Module, Opts) ->
+    process_flag(priority, get_prio(Opts)),
     process_flag(trap_exit, true),
-    process_flag(priority,  get_prio(Opts)),
-    put(sname,     get_sname(Opts)),
+    put(sname, sname(Name)),
     put(verbosity, get_verbosity(Opts)),
     ?vlog("starting",[]),
-    Cache = ets:new(?MK_CACHE_NAME(Name), [set, named_table, public]),
-    ets:insert(?CACHE,   {state, invalid}),
-    Locker = ets:new(?MK_LOCKER_NAME(Name), 
-		     [set, named_table, {keypos, #locker.pid}]),
-    case Module:init(Opts) of
-	{ok, CallbackState} ->
-	    {ok, #state{callback_state = CallbackState, 
-			cache          = Cache, 
-			locker         = Locket, 
-			mod            = Module, 
-			nsubscribers   = NSubscribers}};
-	ERROR ->
-	    ERROR
+    case Module:open(#state{storage_module = Module}, Opts) of
+	{ok, State} ->
+	    {ok, State};
+	{error, _} = Error ->
+	    {stop, Error}
     end.
 
 
-%%--------------------------------------------------------------------
-%% Func: handle_call/3
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%--------------------------------------------------------------------
+%%-----------------------------------------------------------------
+%% Interface functions.
+%%-----------------------------------------------------------------
 
-%%%-----------------------------------------------------------------
+%%-----------------------------------------------------------------
+%% Functions for debugging.
+%%-----------------------------------------------------------------
+print()      -> call(print).
+print(Table) -> call({print, Table, volatile}).
 
-%% 
-%% (1) As long as there are no _waiting_ or active write locks, 
-%%     read-locks will allways be granted
-%% (2) When there are no active readers, write-locks will be
-%%     granted. 
-%% (3) When there are active readers (clients with read-locks),
-%%     a write-lock will have to wait for _all_ the read-locks
-%%     to be released.
-%% (4) If there is a waiting write-lock, all subsequent lock-
-%%     requests will have to wait.
-%% (5) If there is an active write-lock, all subsequent lock-
-%%     requests will have to wait.
-%% 
+variable_get(Name, Db}) ->
+    call({variable_get, Name, Db});
+variable_get(Name) ->
+    call({variable_get, Name, volatile}).
 
-monitor(Pid)   -> erlang:monitor(process, Pid).
--ifdef(SNMP_R10).
-demonitor(Ref) -> 
-    erlang:demonitor(Ref),
-    receive
-	{_, Ref, _, _, _} ->
-	    true
-    after 0 ->
-	    true
+variable_set({Name, Db}, Val) ->
+    call({variable_set, Name, Db, Val});
+variable_set(Name, Val) ->
+    call({variable_set, Name, volatile, Val}).
+
+variable_inc({Name, Db}, N) ->
+    cast({variable_inc, Name, Db, N});
+variable_inc(Name, N) ->
+    cast({variable_inc, Name, volatile, N}).
+
+variable_delete({Name, Db}) ->
+    call({variable_delete, Name, Db});
+variable_delete(Name) ->
+    call({variable_delete, Name, volatile}).
+
+
+table_create({Name, Db}) ->
+    call({table_create, Name, Db});
+table_create(Name) ->
+    call({table_create, Name, volatile}).
+
+table_exists({Name, Db}) ->
+    call({table_exists, Name, Db});
+table_exists(Name) ->
+    call({table_exists, Name, volatile}).
+
+table_delete({Name, Db}) ->
+    call({table_delete, Name, Db});
+table_delete(Name) ->
+    call({table_delete, Name, volatile}).
+
+table_delete_row({Name, Db}, RowIndex) ->
+    call({table_delete_row, Name, Db, RowIndex});
+table_delete_row(Name, RowIndex) ->
+    call({table_delete_row, Name, volatile, RowIndex}).
+
+table_get_row({Name, Db}, RowIndex) ->
+    call({table_get_row, Name, Db, RowIndex});
+table_get_row(Name, RowIndex) ->
+    call({table_get_row, Name, volatile, RowIndex}).
+
+table_get_element({Name, Db}, RowIndex, Col) ->
+    call({table_get_element, Name, Db, RowIndex, Col});
+table_get_element(Name, RowIndex, Col) ->
+    call({table_get_element, Name, volatile, RowIndex, Col}).
+
+table_set_elements({Name, Db}, RowIndex, Cols) ->
+    call({table_set_elements, Name, Db, RowIndex, Cols});
+table_set_elements(Name, RowIndex, Cols) ->
+    call({table_set_elements, Name, volatile, RowIndex, Cols}).
+
+table_next({Name, Db}, RestOid) ->
+    call({table_next, Name, Db, RestOid});
+table_next(Name, RestOid) ->
+    call({table_next, Name, volatile, RestOid}).
+
+table_max_col({Name, Db}, Col) ->
+    call({table_max_col, Name, Db, Col});
+table_max_col(Name, Col) ->
+    call({table_max_col, Name, volatile, Col}).
+
+table_create_row({Name, Db}, RowIndex, Row) ->
+    call({table_create_row, Name, Db,RowIndex, Row});
+table_create_row(Name, RowIndex, Row) ->
+    call({table_create_row, Name, volatile, RowIndex, Row}).
+table_create_row(NameDb, RowIndex, Status, Cols) ->
+    Row = table_construct_row(NameDb, RowIndex, Status, Cols),
+    table_create_row(NameDb, RowIndex, Row).
+
+match({Name, Db}, Pattern) ->
+    call({match, Name, Db, Pattern});    
+match(Name, Pattern) ->
+    call({match, Name, volatile, Pattern}).
+
+
+table_get(Table) ->
+    table_get(Table, [], []).
+
+table_get(Table, Idx, Acc) ->
+    case table_next(Table, Idx) of
+	endOfTable ->
+            lists:reverse(Acc);
+	NextIdx ->
+	    case table_get_row(Table, NextIdx) of
+		undefined ->
+		    {error, {failed_get_row, NextIdx, lists:reverse(Acc)}};
+		Row ->
+		    NewAcc = [{NextIdx, Row}|Acc],
+		    table_get(Table, NextIdx, NewAcc)
+	    end
     end.
--else.
-demonitor(Ref) -> 
-    erlang:demonitor(Ref, [flush]).
--endif.
 
 
-%% (1) No write_lock active or waiting
-handle_call({lock, read = Type, infinity}, {Pid, _} = From, 
-	    #state{active_count = Cnt, writer = false} = State) ->
-    ?vlog("lock(read, infinity) -> "
-	  "entry when no waiting or active writer with"
-	  "~n   Pid: ~p"
-	  "~n   Cnt: ~p", [Pid, Cnt]),
-    MonRef = monitor(Pid),
-    Locker = #locker{pid     = Pid, 
-                     from    = From,
-		     mon_ref = MonRef, 
-		     type    = Type, 
-		     state   = active},
-    ets:insert(?LOCKER_TAB, Locker),
-%%     ?vtrace("lock(read, infinity) -> done when"
-%% 	    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-    {reply, ok, State#state{active_count = inc(Cnt)}};
+%%-----------------------------------------------------------------
+%% Implements the variable functions.
+%%-----------------------------------------------------------------
+handle_call({variable_get, Name}, _From, State) -> 
+    ?vlog("variable get: ~p [~p]", [Name]),
+    {Reply, NewState} = insert(State, Name), 
+    {reply, Reply, NewState};
 
-%% (4,5) There is waiting or active write locks
-handle_call({lock, read = Type, infinity}, {Pid, _} = From, State) ->
-    ?vlog("lock(read, infinity) -> "
-	  "entry when active or waiting write locks with"
-	  "~n   Pid: ~p", [Pid]),
-    MonRef = monitor(Pid),
-    Locker = #locker{pid     = Pid, 
-		     from    = From, 
-		     mon_ref = MonRef, 
-		     type    = Type, 
-		     state   = waiting},
-    ets:insert(?LOCKER_TAB, Locker),
-    Waiting = lists:append(State#state.waiting, [Pid]),
-%%     ?vtrace("lock(read, infinity) -> done when"
-%% 	    "~n   Waiting: ~p"
-%% 	    "~n   Lockers: ~p", [Waiting, ets:tab2list(?LOCKER_TAB)]),
-    {noreply, State#state{waiting = Waiting}};
+handle_call({variable_set, Name, Db, Val}, _From, State) -> 
+    ?vlog("variable ~p set [~p]: "
+	  "~n   Val:  ~p",[Name, Db, Val]),
+    {reply, insert(Db, Name, Val, State), State};
 
-%% (2) No active locks
-%% Since there are no active lockers, that also means that 
-%% there is no lockers waiting.
-handle_call({lock, write = Type, infinity}, {Pid, _} = From, 
-	    #state{active_count = 0, writer = false} = State) ->
-    ?vlog("lock(write, infinity) -> "
-	  "entry when no active lockers with"
-	  "~n   Pid: ~p", [Pid]),
-    MonRef = monitor(Pid),
-    Locker = #locker{pid     = Pid, 
-                     from    = From,
-		     mon_ref = MonRef, 
-		     type    = Type,
-		     state   = active},
-    ets:insert(?LOCKER_TAB, Locker),
-%%     ?vtrace("lock(write, infinity) -> done when"
-%% 	    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-    {reply, ok, State#state{active_count = 1, writer = true}};
+handle_call({variable_delete, Name, Db}, _From, State) -> 
+    ?vlog("variable delete: ~p [~p]",[Name, Db]),
+    {reply, delete(Db, Name, State), State};
 
-%% (3) No waiting or active writers, but at least one active reader
-handle_call({lock, write = Type, infinity}, {Pid, _} = From, 
-	    #state{writer = false} = State) ->
-    ?vlog("lock(write, infinity) -> "
-	  "entry when active lockers with"
-	  "~n   Pid: ~p", [Pid]),
-    MonRef = monitor(Pid),
-    Locker = #locker{pid     = Pid, 
-		     from    = From, 
-		     mon_ref = MonRef, 
-		     type    = Type,
-		     state   = waiting},
-    ets:insert(?LOCKER_TAB, Locker),
-    Waiting = lists:append(State#state.waiting, [Pid]),
-%%     ?vtrace("lock(write, infinity) -> done when"
-%% 	    "~n   Waiting: ~p"
-%% 	    "~n   Lockers: ~p", [Waiting, ets:tab2list(?LOCKER_TAB)]),
-    {noreply, State#state{waiting = Waiting, writer = true}};
 
-handle_call({lock, write = Type, infinity}, {Pid, _} = From, 
-	    #state{writer = true} = State) ->
-    ?vlog("lock(write, infinity) -> entry with"
-	  "~n   Pid: ~p", [Pid]),
-    MonRef = monitor(Pid),
-    Locker = #locker{pid     = Pid, 
-		     from    = From, 
-		     mon_ref = MonRef, 
-		     type    = Type,
-		     state   = waiting},
-    ets:insert(?LOCKER_TAB, Locker),
-    Waiting = lists:append(State#state.waiting, [Pid]),
-%%     ?vtrace("lock(write, infinity) -> done when"
-%% 	    "~n   Waiting: ~p"
-%% 	    "~n   Lockers: ~p", [Waiting, ets:tab2list(?LOCKER_TAB)]),
-    {noreply, State#state{waiting = Waiting}};
+%%-----------------------------------------------------------------
+%% Implements the table functions.
+%%-----------------------------------------------------------------
+%% Entry in ets for a tablerow:
+%% Key = {<tableName>, <(flat) list of indexes>}
+%% Val = {{Row}, <Prev>, <Next>}
+%% Where Prev and Next = <list of indexes>; "pointer to prev/next"
+%% Each table is a double linked list, with a head-element, with
+%% direct access to each individual element.
+%% Head-el: Key = {<tableName>, first}
+%% Operations:
+%% table_create_row(<tableName>, <list of indexes>, <row>)   O(n)
+%% table_delete_row(<tableName>, <list of indexes>)          O(1)
+%% get(<tableName>, <list of indexes>, Col)            O(1)
+%% set(<tableName>, <list of indexes>, Col, Val)       O(1)
+%% next(<tableName>, <list of indexes>)   if Row exist O(1), else O(n)
+%%-----------------------------------------------------------------
+handle_call({table_create, Name, Db}, _From, State) ->
+    ?vlog("table create: ~p [~p]",[Name, Db]),
+    catch handle_delete(Db, Name, State),
+    {reply, insert(Db, {Name, first}, {undef, first, first}, State), State};
 
-handle_call({verbosity, Verbosity}, _From, State) ->
-    ?vlog("verbosity: ~p -> ~p", [get(verbosity), Verbosity]),
-    Old = put(verbosity, ?vvalidate(Verbosity)),
-    {reply, Old, State};
+handle_call({table_exists, Name, Db}, _From, State) ->
+    ?vlog("table exist: ~p [~p]",[Name, Db]),
+    Res =
+	case lookup(Db, {Name, first}, State) of
+	    {value, _} -> true;
+	    undefined -> false
+	end,
+    ?vdebug("table exist result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
 
-%% If there are no more active read'ers, and no waiting, 
-%% then set to writer and reply now
-handle_call({upgrade_lock, Pid}, _From, 
-	    #state{active_count = 1, waiting = []} = State) ->
-    ?vlog("upgrade_lock -> "
-	  "entry when one active locker and no waiting with"
-	  "~n   Pid: ~p", [Pid]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = read} = Locker] ->
-	    ets:insert(?LOCKER_TAB, Locker#locker{type = write}),
-%% 	    ?vtrace("upgrade_lock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {reply, ok, State#state{writer = true}};
+handle_call({table_delete, Name, Db}, _From, State) ->
+    ?vlog("table delete: ~p [~p]",[Name, Db]),
+    catch handle_delete(Db, Name, State),
+    {reply, true, State};
 
-	[#locker{type = write}] ->
-	    {reply, ok, State}
+handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
+    ?vlog("table create row [~p]: "
+	  "~n   Name:    ~p"
+	  "~n   Indexes: ~p"
+	  "~n   Row:     ~p",[Db, Name, Indexes, Row]),
+    Res = 
+	case catch handle_create_row(Db, Name, Indexes, Row, State) of
+	    {'EXIT', _} -> false;
+	    _ -> true
+	end,
+    ?vdebug("table create row result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
+    ?vlog("table delete row [~p]: "
+	  "~n   Name:    ~p"
+	  "~n   Indexes: ~p", [Db, Name, Indexes]),
+    Res = 
+	case catch handle_delete_row(Db, Name, Indexes, State) of
+	    {'EXIT', _} -> false;
+	    _ -> true
+	end,
+    ?vdebug("table delete row result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_get_row, Name, Db, Indexes}, _From, State) -> 
+    ?vlog("table get row [~p]: "
+	  "~n   Name:    ~p"
+	  "~n   Indexes: ~p",[Db, Name, Indexes]),
+    Res = case lookup(Db, {Name, Indexes}, State) of
+	      undefined -> 
+		  undefined;
+	      {value, {Row, _Prev, _Next}} -> 
+		  Row
+	  end,
+    ?vdebug("table get row result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_get_element, Name, Db, Indexes, Col}, _From, State) ->
+    ?vlog("table ~p get element [~p]: "
+	  "~n   Indexes: ~p"
+	  "~n   Col:     ~p", [Name, Db, Indexes, Col]),
+    Res = case lookup(Db, {Name, Indexes}, State) of
+	      undefined -> undefined;
+	      {value, {Row, _Prev, _Next}} -> {value, element(Col, Row)}
+	  end,
+    ?vdebug("table get element result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_set_elements, Name, Db, Indexes, Cols}, _From, State) ->
+    ?vlog("table ~p set element [~p]: "
+	  "~n   Indexes: ~p"
+	  "~n   Cols:    ~p", [Name, Db, Indexes, Cols]),
+    Res = 
+	case catch handle_set_elements(Db, Name, Indexes, Cols, State) of
+	    {'EXIT', _} -> false;
+	    _ -> true
+	end,
+    ?vdebug("table set element result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_next, Name, Db, []}, From, State) ->
+    ?vlog("table next: ~p [~p]",[Name, Db]),
+    handle_call({table_next, Name, Db, first}, From, State);
+    
+handle_call({table_next, Name, Db, Indexes}, _From, State) ->
+    ?vlog("table ~p next [~p]: "
+	  "~n   Indexes: ~p",[Name, Db, Indexes]),
+    Res = case lookup(Db, {Name, Indexes}, State) of
+	      {value, {_Row, _Prev, Next}} -> 
+		  if 
+		      Next =:= first -> endOfTable;
+		      true -> Next
+		  end;
+	      undefined -> 
+		  table_search_next(Db, Name, Indexes, State)
+	  end,
+    ?vdebug("table next result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({table_max_col, Name, Db, Col}, _From, State) ->
+    ?vlog("table ~p max col [~p]: "
+	  "~n   Col: ~p",[Name, Db, Col]),
+    Res = table_max_col(Db, Name, Col, 0, first, State),
+    ?vdebug("table max col result: "
+	    "~n   ~p",[Res]),
+    {reply, Res, State};
+
+handle_call({match, Name, Db, Pattern}, _From, State) ->
+    ?vlog("match ~p [~p]:"
+	"~n   Pat: ~p", [Name, Db, Pattern]),
+    L1 = match(Db, Name, Pattern, State),
+    {reply, lists:delete([undef], L1), State};
+
+%% This check (that there is no backup already in progress) is also 
+%% done in the master agent process, but just in case a user issues 
+%% a backup call to this process directly, we add a similar check here. 
+handle_call({backup, BackupDir}, From, 
+	    #state{backup = undefined, dets = Dets} = State) ->
+    ?vlog("backup: ~p",[BackupDir]),
+    Pid = self(),
+    V   = get(verbosity),
+    case file:read_file_info(BackupDir) of
+	{ok, #file_info{type = directory}} ->
+	    BackupServer = 
+		erlang:spawn_link(
+		  fun() ->
+			  put(sname, albs),
+			  put(verbosity, V),
+			  Dir   = filename:join([BackupDir]), 
+			  #dets{tab = Tab} = Dets, 
+			  Reply = handle_backup(Tab, Dir),
+			  Pid ! {backup_done, Reply},
+			  unlink(Pid)
+		  end),	
+	    ?vtrace("backup server: ~p", [BackupServer]),
+	    {noreply, State#state{backup = {BackupServer, From}}};
+	{ok, _} ->
+	    {reply, {error, not_a_directory}, State};
+	Error ->
+	    {reply, Error, State}
     end;
 
-%% If there are no more active read'ers, and no waiting, 
-%% then set to writer and reply now
-handle_call({upgrade_lock, Pid}, {Pid, _} = From, 
-	    #state{active_count = 1, waiting = Waiting} = State) ->
-    ?vlog("upgrade_lock -> "
-	  "entry when one active locker with"
-	  "~n   Pid:     ~p"
-	  "~n   Waiting: ~p", [Pid, Waiting]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = read} = Locker] ->
-	    case active_waiting_writer(Waiting) of
-		{true, StillWaiting} ->
-		    ?vtrace("upgrade_lock -> activated when"
-			    "~n   StillWaiting: ~p", [StillWaiting]),
-		    ets:insert(?LOCKER_TAB, Locker#locker{from  = From, 
-							  type  = write,
-							  state = waiting}),
-%% 		    ?vtrace("upgrade_lock -> done when"
-%% 			    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-		    {noreply, State#state{waiting = StillWaiting ++ [Pid]}};
-		{false, []} ->
-		    ?vtrace("upgrade_lock -> none activated, "
-			    "so we can let the upgrader in", []),
-		    ets:insert(?LOCKER_TAB, Locker#locker{type = write}),
-%% 		    ?vtrace("upgrade_lock -> done when"
-%% 			    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-		    {reply, ok, State#state{writer  = true,
-					    waiting = []}}
-	    end;
+handle_call({backup, _BackupDir}, _From, #state{backup = Backup} = S) ->
+    ?vinfo("backup already in progress: ~p", [Backup]),
+    {reply, {error, backup_in_progress}, S};
 
-	[#locker{type = write}] ->
-	    {reply, ok, State};
+handle_call(dump, _From, #state{dets = Dets} = State) ->
+    ?vlog("dump",[]),
+    dets_sync(Dets),
+    {reply, ok, State};
 
-	_ ->
-	    {reply, {error, not_found}, State}
+handle_call(info, _From, #state{dets = Dets, ets = Ets} = State) ->
+    ?vlog("info",[]),
+    Info = get_info(Dets, Ets),
+    {reply, Info, State};
+
+handle_call(print, _From, #state{dets = Dets, ets = Ets} = State) ->
+    ?vlog("print",[]),
+    L1 = ets:tab2list(Ets),
+    L2 = dets_match_object(Dets, '_'),
+    {reply, {{ets, L1}, {dets, L2}}, State};
+
+handle_call({print, Table, Db}, _From, State) ->
+    ?vlog("print: ~p [~p]", [Table, Db]),
+    L = match(Db, Table, '$1', State),
+    {reply, lists:delete([undef], L), State};
+
+handle_call({register_notify_client, Client, Module}, _From, State) ->
+    ?vlog("register_notify_client: "
+	"~n   Client: ~p"
+	"~n   Module: ~p", [Client, Module]),
+    Nc = State#state.notify_clients,
+    case lists:keysearch(Client,1,Nc) of
+	{value,{Client,Mod}} ->
+	    ?vlog("register_notify_client: already registered to: ~p",
+		  [Module]),
+	    {reply, {error,{already_registered,Mod}}, State};
+	false ->
+	    {reply, ok, State#state{notify_clients = [{Client,Module}|Nc]}}
     end;
 
-%% There are active and waiting locker's
-handle_call({upgrade_lock, Pid}, {Pid, _} = From, 
-	    #state{active_count = Cnt, waiting = Waiting} = State) ->
-    ?vlog("upgrade_lock -> entry with"
-	  "~n   Pid:     ~p"
-	  "~n   Waiting: ~p", [Pid, Waiting]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = read} = Locker] ->
-	    ets:insert(?LOCKER_TAB, Locker#locker{from  = From, 
-						  type  = write,
-						  state = waiting}),
-%% 	    ?vtrace("upgrade_lock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = dec(Cnt),
-				  waiting      = Waiting ++ [Pid]}};
-
-	[#locker{type = write}] ->
-	    {reply, ok, State};
-
-	_ ->
-	    {reply, {error, not_found}, State}
+handle_call({unregister_notify_client, Client}, _From, State) ->
+    ?vlog("unregister_notify_client: ~p",[Client]),
+    Nc = State#state.notify_clients,
+    case lists:keysearch(Client,1,Nc) of
+	{value,{Client,_Module}} ->
+	    Nc1 = lists:keydelete(Client,1,Nc),
+	    {reply, ok, State#state{notify_clients = Nc1}};
+	false ->
+	    ?vlog("unregister_notify_client: not registered",[]),
+	    {reply, {error,not_registered}, State}
     end;
-
 
 handle_call(stop, _From, State) ->
     ?vlog("stop",[]),
@@ -444,409 +530,55 @@ handle_call(Req, _From, State) ->
     {reply, Reply, State}.
 
 
-%%--------------------------------------------------------------------
-%% Func: handle_cast/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%--------------------------------------------------------------------
-handle_cast({unlock, Pid}, 
-	    #state{active_count = Cnt, waiting = []} = State) ->
-    ?vlog("unlock -> entry when no waiting with"
-	  "~n   Pid: ~p"
-	  "~n   Cnt: ~p", [Pid, Cnt]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{mon_ref = MonRef, type = read}] ->
-	    ?vdebug("unlock -> found read locker"
-		    "~n   MonRef: ~p", [MonRef]),
-	    demonitor(MonRef),
-	    ets:delete(?LOCKER_TAB, Pid),
-%% 	    ?vtrace("unlock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = dec(Cnt)}};
-	[#locker{mon_ref = MonRef, type = write}] ->
-	    ?vdebug("unlock -> found write locker"
-		    "~n   MonRef: ~p", [MonRef]),
-	    demonitor(MonRef),
-	    ets:delete(?LOCKER_TAB, Pid),
-%% 	    ?vtrace("unlock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = dec(Cnt), writer = false}};
-	_ ->
-	    {noreply, State}
-    end;
-
-handle_cast({unlock, Pid}, 
-	    #state{active_count = Cnt, waiting = Waiting} = State) ->
-    ?vlog("unlock -> entry when waiting with"
-	  "~n   Pid: ~p"
-	  "~n   Cnt: ~p", [Pid, Cnt]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	%% Last active reader: Time to let the waiting in
-	%% The first of the waiting _has_ to be a write-lock
-	%% (read-locks will only be set waiting if there is 
-	%% a waiting or active write).
-	[#locker{mon_ref = MonRef, type = read}] when (Cnt == 1) ->
-	    ?vdebug("unlock -> found read locker"
-		    "~n   MonRef: ~p", [MonRef]),
-	    demonitor(MonRef),
-	    ets:delete(?LOCKER_TAB, Pid),
-	    case active_waiting_writer(Waiting) of
-		{true, StillWaiting} ->
-		    ?vtrace("unlock -> activated when"
-			    "~n   StillWaiting: ~p", [StillWaiting]),
-%% 		    ?vtrace("unlock -> done when"
-%% 			    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-		    {noreply, State#state{active_count = 1, 
-					  writer       = true,
-					  waiting      = StillWaiting}};
-		{false, []} ->
-		    ?vtrace("unlock -> none activated", []),
-%% 		    ?vtrace("unlock -> done when"
-%% 			    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-		    {noreply, State#state{active_count = 0, 
-					  writer       = false,
-					  waiting      = []}}
-	    end;
-
-	[#locker{mon_ref = MonRef, type = read}] ->
-	    ?vdebug("unlock -> found read locker"
-		    "~n   MonRef: ~p", [MonRef]),
-	    demonitor(MonRef),
-	    ets:delete(?LOCKER_TAB, Pid),
-%% 	    ?vtrace("unlock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = dec(Cnt)}};
-
-	[#locker{mon_ref = MonRef, type = write}] ->
-	    %% Release the hord (maybe)
-	    ?vdebug("unlock -> found write locker"
-		    "~n   MonRef: ~p", [MonRef]),
-	    demonitor(MonRef),
-	    ets:delete(?LOCKER_TAB, Pid),
-	    {Active, StillWaiting, Writer} = 
-		activate_waiting_readers_or_maybe_writer(Waiting),
-	    ?vtrace("unlock -> new reader(s) or maybe writer activated:"
-		    "~n   Active:       ~p"
-		    "~n   StillWaiting: ~p"
-		    "~n   Writer:       ~p", [Active, StillWaiting, Writer]),
-%% 	    ?vtrace("unlock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = Active,
-				  writer       = Writer, 
-				  waiting      = StillWaiting}};
-
-	%% If we have no active lockers, this may be a bug and therefor
-	%% see if we can activate some of the waiting
-	_ when (State#state.active_count == 0) ->
-	    ?vdebug("unlock -> could not find locker", []),
-	    {Active, StillWaiting, Writer} = 
-		activate_waiting_readers_or_maybe_writer(Waiting),
-	    ?vtrace("unlock -> new reader(s) or maybe writer activated:"
-		    "~n   Active:       ~p"
-		    "~n   StillWaiting: ~p"
-		    "~n   Writer:       ~p", [Active, StillWaiting, Writer]),
-%% 	    ?vtrace("unlock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, 
-	     State#state{active_count = Active,
-			 writer       = Writer, 
-			 waiting      = StillWaiting}};
-
-	_ ->
-	    {noreply, State}
-    end;
-
-
-handle_cast({downgrade_lock, Pid}, #state{waiting = Waiting} = State) ->
-    ?vlog("downgrade_lock -> entry when waiting with"
-	  "~n   Pid: ~p", [Pid]),
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = read}] ->
-	    {noreply, State};
-
-	[#locker{type = write} = Locker] ->
-	    %% We need to check if this is the only write(r),
-	    %% in that case we must update the writer field
-	    ets:insert(?LOCKER_TAB, Locker#locker{type = read}),
-	    {Cnt, NewWaiting} = activate_waiting_readers(Waiting),
-	    ?vtrace("downgrade_lock -> entry when waiting with"
-		    "~n   Cnt:        ~p"
-		    "~n   NewWaiting: ~p", [Cnt, NewWaiting]),
-%% 	    ?vtrace("downgrade_lock -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = Cnt, 
-				  waiting      = NewWaiting,
-				  writer       = is_writer(NewWaiting)}}
-    end;
-
-
+handle_cast({variable_inc, Name, Db, N}, State) ->
+    ?vlog("variable ~p inc"
+	  "~n   N: ~p", [Name, N]),
+    M = case lookup(Db, Name, State) of
+	    {value, Val} -> Val;
+	    _ -> 0 
+	end,
+    insert(Db, Name, M+N rem 4294967296, State),
+    {noreply, State};
+    
+handle_cast({verbosity,Verbosity}, State) ->
+    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+    put(verbosity,?vvalidate(Verbosity)),
+    {noreply, State};
+    
 handle_cast(Msg, State) ->
     warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
+    
 
-
-
-
-%%--------------------------------------------------------------------
-%% Func: handle_info/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%--------------------------------------------------------------------
-
-%% This must be a glitch
-handle_info({'DOWN', _MonRef, process, Pid, Reason}, 
-	    #state{active_count = 0, waiting = []} = State) ->
-    ?vlog("received DOWN message from ~p when no active and no waiting"
-	  "~n   exited for reason: ~n~p", [Pid, Reason]),
-    {noreply, State};
-
-handle_info({'DOWN', _MonRef, process, Pid, Reason}, 
-	    #state{active_count = Cnt, waiting = []} = State) ->
-    ?vlog("received DOWN message from ~p when active but no waiting"
-	  "~n   exited for reason: ~n~p", [Pid, Reason]),
-    case handle_maybe_active_down(Cnt, Pid) of
-	{NewCnt, write} ->
-%% 	    ?vtrace("DOWN -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = NewCnt, writer = false}};
-	{NewCnt, read} ->
-%% 	    ?vtrace("DOWN -> done when"
-%% 		    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-	    {noreply, State#state{active_count = NewCnt}}
-    end;
-
-handle_info({'DOWN', _MonRef, process, Pid, Reason}, State) ->
-    ?vlog("received DOWN message from ~p"
-	  "~n   exited for reason: ~n~p", [Pid, Reason]),
-    NewState = handle_maybe_active_or_waiting_down(Pid, State),
-%%     ?vtrace("DOWN -> done when"
-%% 	    "~n   Lockers: ~p", [ets:tab2list(?LOCKER_TAB)]),
-    {noreply, NewState};
+handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
+    ?vlog("backup server (~p) exited for reason ~n~p", [Pid, Reason]),
+    gen_server:reply(From, {error, Reason}),
+    {noreply, S#state{backup = undefined}};
 
 handle_info({'EXIT', Pid, Reason}, S) ->
-    %% The only other process we should be linked to is
-    %% our supervisor, so die...
+    %% The only other processes we should be linked to are
+    %% either the master agent or our supervisor, so die...
     {stop, {received_exit, Pid, Reason}, S};
+
+handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
+    ?vlog("backup done:"
+	  "~n   Reply: ~p", [Reply]),
+    gen_server:reply(From, Reply),
+    {noreply, S#state{backup = undefined}};
 
 handle_info(Info, State) ->
     warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 
-%%--------------------------------------------------------------------
-%% Func: terminate/2
-%% Purpose: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%%--------------------------------------------------------------------
 terminate(Reason, State) ->
-    ?vlog("terminate ->"
-	  "~n   Reason: ~p"
-	  "~n   State:  ~p", [Reason, State]),
-    ets:delete(?CACHE),
-    ets:delete(?LOCKER_TAB),
-    ok.
+    ?vlog("terminate: ~p",[Reason]),
+    close(State).
 
 
 %%%-------------------------------------------------------------------
 %%% Internal functions
 %%%-------------------------------------------------------------------
-
-%% Locks are initially exclusive which means that it is possible
-%% to both read _and_ write. After a downgrade, it is only possible 
-%% to read. But since, by then, the process already has a lock, it
-%% can just go ahead and read.
-
-lock(Type) ->
-    call({lock, Type, infinity}).
-
-%% Upgrade from read to lock write
-upgrade_lock() ->
-    call({upgrade_lock, self()}).
-
-%% Downgrade from write to read lock
-downgrade_lock() ->
-    cast({downgrade_lock, self()}).
-
-unlock() ->
-    cast({unlock, self()}).
-
-
-insert_all(Targets) ->
-    Fun = fun({NotifyName, Data}) -> insert(NotifyName, Data) end,
-    lists:foreach(Fun, Targets).
-
-insert(NotifyName, {DestAddr, TargetName, TargetParams, NotifyType}) ->
-    Key  = {NotifyName, TargetName},
-    Data = {DestAddr, TargetParams, NotifyType},
-    ets:insert(?CACHE, {Key, Data}).
-
-delete_all() ->
-    ets:delete_all_objects(?CACHE).
-
-
-
-%%----------------------------------------------------------
-
-%% This function is called when we have active but no waiting
-%% lockers. So, if we have it stored, it's an active locker.
-handle_maybe_active_down(Cnt, Pid) ->
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = Type}] ->
-	    ets:delete(?LOCKER_TAB, Pid),
-	    {dec(Cnt), Type};
-	_ ->
-	    {Cnt, read}
-    end.
-
-handle_maybe_active_or_waiting_down(Pid, 
-				    #state{active_count = Cnt, 
-					   waiting      = Waiting} = State) ->
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{state = active, type = read}] when (Cnt == 1) ->
-	    %% 1) This means that the writer must be waiting
-	    %% 2) The last reader terminated, 
-	    %%    time to activate the wating writer
-	    %%    If this was the last one, then we must
-	    %%    activate the waiting writer.
-	    ets:delete(?LOCKER_TAB, Pid),
-	    case active_waiting_writer(Waiting) of	
-		{true, StillWaiting} ->
-		    %% active count is still 1, so no need to update that
-		    State#state{writer  = true, 
-                                waiting = StillWaiting};
-		{false, []} ->
-		    State#state{active_count = 0, 
-				writer       = false,
-				waiting      = []}
-	    end;
-
-	[#locker{state = active, type = read}] ->
-	    %% 1) This means that the writer must be waiting
-	    %% 2) More then one (read-) locker active, just
-	    %%    clean up.
-	    ets:delete(?LOCKER_TAB, Pid),
-	    State#state{active_count = dec(Cnt)};
-
-	[#locker{state = active, type = write}] ->
-	    ets:delete(?LOCKER_TAB, Pid),
-	    {Active, StillWaiting, Writer} = 
-		activate_waiting_readers_or_maybe_writer(Waiting),
-	    State#state{active_count = Active,
-			writer       = Writer, 
-			waiting      = StillWaiting};
-
-	[#locker{state = waiting, type = read}] ->
-	    ets:delete(?LOCKER_TAB, Pid),
-	    State#state{waiting = lists:delete(Pid, Waiting)};
-
-	[#locker{state = waiting, type = write}] ->
-	    %% We need to check if this is the only waiting writer.
-	    %% If it is we shall set the writer field to false
-	    ets:delete(?LOCKER_TAB, Pid),
-	    NewWaiting = lists:delete(Pid, Waiting),
-	    Writer = 
-		case ets:match_object(?LOCKER_TAB, 
-				      #locker{state = active, 
-					      type  = write,
-					      _     = '_'}) of
-		    [] ->
-			is_writer(NewWaiting);
-		    _ ->
-			true
-		end,
-	    State#state{writer  = Writer,
-			waiting = NewWaiting};
-
-	_Other ->
-	    State
-
-    end.
-
-is_writer([]) ->
-    false;
-is_writer([Pid|Pids]) ->
-    case ets:lookup(?LOCKER_TAB, Pid) of
-	[#locker{type = write}] ->
-	    true;
-	_Other ->
-	    is_writer(Pids)
-    end.
-
-
-%%----------------------------------------------------------
-
-%% This is just a utility function to make sure we don't
-%% end up in a lockout situation.
-active_waiting_writer([]) ->
-    {false, []};
-active_waiting_writer([H|T]) ->
-    case ets:lookup(?LOCKER_TAB, H) of
-        [#locker{from = From} = L] ->
-            ets:insert(?LOCKER_TAB, L#locker{state = active}),
-            gen_server:reply(From, ok),
-            {true, T};
-        [] ->
-            %% Oups
-            error_msg("Could not find locker record for ~p", [H]),
-            active_waiting_writer(T)
-    end.
-
-
-%% Activate waiting read(ers)
-activate_waiting_readers(Waiting) ->
-    activate_waiting_readers(Waiting, 1).
-
-activate_waiting_readers([], Cnt) ->
-    {Cnt, []};
-activate_waiting_readers([H|T] = Waiting, Cnt) ->
-    case ets:lookup(?LOCKER_TAB, H) of
-        [#locker{from = From, type = read} = L] ->
-            ets:insert(?LOCKER_TAB, L#locker{state = active}),
-            gen_server:reply(From, ok),
-            activate_waiting_readers(T, inc(Cnt));
-
-        %% Found a writer, time to stop starting readers
-        [#locker{type = write}] ->
-            {Cnt, Waiting};
-
-        [] ->
-            %% Oups
-            error_msg("Could not find locker record for ~p", [H]),
-            activate_waiting_readers(T, Cnt)
-
-    end.
-
-
-activate_waiting_readers_or_maybe_writer(Waiting) ->
-    activate_waiting_readers_or_maybe_writer(Waiting, 0).
-
-activate_waiting_readers_or_maybe_writer([], Cnt) ->
-    {Cnt, [], false};
-activate_waiting_readers_or_maybe_writer([H|T] = Waiting, Cnt) ->
-    case ets:lookup(?LOCKER_TAB, H) of
-        [#locker{from = From, type = read} = L] ->
-            ets:insert(?LOCKER_TAB, L#locker{state = active}),
-            gen_server:reply(From, ok),
-            activate_waiting_readers_or_maybe_writer(T, inc(Cnt));
-
-        %% Only active writer only if it's the first
-        [#locker{from = From, type = write} = L] when (Cnt == 0) ->
-            ets:insert(?LOCKER_TAB, L#locker{state = active}),
-            gen_server:reply(From, ok),
-            {1, T, true};
-
-        %% Found a writer, time to stop starting readers
-        [#locker{type = write}] ->
-            {Cnt, Waiting, false};
-
-        [] ->
-            %% Oups
-            error_msg("Could not find locker record for ~p", [H]),
-            activate_waiting_readers_or_maybe_writer(T, Cnt)
-
-    end.
 
 
 %%----------------------------------------------------------
@@ -873,19 +605,107 @@ code_change(_Vsn, State, _Extra) ->
 
 
 %%------------------------------------------------------------------
+%% Storage backend interface/wrapper functions
+%%------------------------------------------------------------------
 
-inc(Cnt) ->
-    Cnt + 1.
+open(#state{storage_module = Module} = State, Opts) ->
+    try Module:open(Opts) of
+	{ok, StorageState} ->
+	    {ok, State#state{storage_state = StorageState}}
+    catch
+	T:Reason ->
+	    error_msg("Open failed (~w): "
+		      "~n   ~p", [T, Reason]),
+	    {error, {T, Reason}}
+    end.
 
-dec(Cnt) when (Cnt =< 0) ->
-    0;
-dec(Cnt) ->
-    Cnt - 1.
+
+close(#state{storage_module = Module, 
+	     storage_state  = StorageState} = State) ->
+    try Module:handle_close(StorageState) of
+	ok ->
+	    State#state{storage_state = undefined}
+    catch
+	T:Reason ->
+	    error_msg("Close failed (~w): "
+		      "~n   ~p", [T, Reason]),
+	    State
+    end.
+
+
+insert(#state{storage_module = Module, 
+	      storage_state  = StorageState} = State, Key, Value) ->
+    try Module:handle_insert(StorageState, Key, Value) of
+	{ok, NewStorageState} ->
+	    {true, State#state{storage_state = NewStorageState}};	    
+	ok ->
+	    {true, State}
+    catch
+	T:Reason ->
+	    error_msg("Insert failed (~w) for ~p with value ~p: "
+		      "~n   ~p", [T, Key, Value, Reason]),
+	    {false, State}	    
+    end.
+
+
+delete(#state{storage_module = Module, 
+	      storage_state  = StorageState} = State, Key) ->
+    try Module:handle_delete(StorageState, Key) of
+	{ok, NewStorageState} ->
+	    {true, State#state{storage_state = NewStorageState}};	    
+	ok ->
+	    {true, State}
+    catch
+	T:Reason ->
+	    error_msg("Delete failed (~w) for ~p: "
+		      "~n   ~p", [T, Key, Reason]),
+	    {false, State}
+    end.
+
+
+lookup(#state{storage_module = Module, 
+	      storage_state  = StorageState} = State, Key) ->
+    try Module:handle_lookup(StorageState, Key) of
+	undefined ->
+	    {undefined, State};
+	{undefined, NewStorageState} ->
+	    {undefined, State#state{storage_state = NewStorageState}};
+	{ok, Value} ->
+	    {{value, Value}, State};
+	{ok, Value, NewStorageState} ->
+	    {{value, Value}, State#state{storage_state = NewStorageState}}
+    catch
+	T:Reason ->
+	    error_msg("Lookup failed (~w) for ~p: "
+		      "~n   ~p", [T, Key, Reason]),
+	    {undefined, State}
+    end.
+
+
+match(#state{storage_module = Module, 
+	     storage_state  = StorageState} = State, Pattern) ->
+    try Module:handle_match(StorageState, Pattern) of
+	{ok, Match} ->
+	    {Match, State};
+	{ok, Match, NewStorageState} ->
+	    {Match, State#state{storage_state = NewStorageState}}
+    catch
+	T:Reason ->
+	    error_msg("Match failed (~w) for ~p: "
+		      "~n   ~p", [T, Pattern, Reason]),
+	    []
+    end.
 
 
 %%------------------------------------------------------------------
 %% This functions retrieves option values from the Options list.
 %%------------------------------------------------------------------
+
+get_prio(Opts) ->
+    get_opt(prio, Opts, normal).
+
+get_verbosity(Opts) ->
+    get_opt(verbosity, Opts, ?default_verbosity).
 
 get_opt(Key, Opts, Def) ->
     snmp_misc:get_option(Key, Opts, Def).
