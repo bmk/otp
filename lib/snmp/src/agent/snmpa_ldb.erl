@@ -42,7 +42,6 @@
 -define(MK_TABLE_NAME(Pre, Post), 
 	list_to_atom(atom_to_list(Pre) ++ "_" ++ atom_to_list(Post))).
 -define(MK_CACHE_NAME(Name),  ?MK_TABLE_NAME(Name, cache)).
--define(MK_LOCKER_NAME(Name), ?MK_TABLE_NAME(Name, locker)).
 
 
 -ifndef(default_verbosity).
@@ -61,18 +60,21 @@
 
 
 %%%-------------------------------------------------------------------
-%%% API
-%%%-------------------------------------------------------------------
+
 behaviour_info(callbacks) ->
-    [{init,        4}, 
-     {handle_insert,      1},
-     {handle_delete,      2},
-     {handle_lookup, 1},
-     {, 2},
-     {info,              1}, 
-     {verbosity,         2}];
+    [{open,          1}, 
+     {handle_close,  1},
+     {handle_insert, 2},
+     {handle_delete, 2},
+     {handle_lookup, 2},
+     {handle_match,  2}];
 behaviour_info(_) ->
     undefined.
+
+
+%%%-------------------------------------------------------------------
+%%% API
+%%%-------------------------------------------------------------------
 
 start_link(Name, Module, Opts) -> 
     ?d("start_link -> entry with"
