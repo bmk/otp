@@ -18,7 +18,8 @@
 %%
 -module(snmpa_ldb_volatile).
 
--behaviour(snmpa_local_db).
+-behaviour(snmpa_ldb).
+%% -behaviour(snmpa_local_db).
 
 -export([
 	 start_link/1,
@@ -46,12 +47,12 @@
          table_max_col/2
 	]).
 
-%% snmpa_ldb callback functions
+%% snmpa_local_db callback functions
 -export([
 	 open/1,
-	 handle_insert/3, 
+	 handle_insert/2, 
 	 handle_delete/2,
-	 handle_match/3, 
+	 handle_match/2, 
 	 handle_lookup/2,
 	 handle_close/1
 	]).
@@ -107,13 +108,10 @@ table_get_row(Table, RowIndex) ->
 table_get_element(Table, RowIndex, Col) ->
     snmpa_ldb:table_get_element(?NAME, Table, RowIndex, Col).
 
-table_get_elements(Table, RowIndex, Cols, FOI) ->
-    snmpa_ldb:table_get_elements(?NAME, Table, RowIndex, Cols, FOI).
+table_get_elements(Table, RowIndex, Cols) ->
+    snmpa_ldb:table_get_elements(?NAME, Table, RowIndex, Cols).
 
-table_set_elements(Table, RowIndex, Cols, FOI) ->
-    snmpa_ldb:table_get_elements(?NAME, Table, RowIndex, Cols, FOI).
-
-table_set_elements(Name, RowIndex, Cols) ->
+table_set_elements(Table, RowIndex, Cols) ->
     snmpa_ldb:table_set_elements(?NAME, Table, RowIndex, Cols).
 
 table_set_status(Table, RowIndex, Status, StatusCol, Cols, 
@@ -139,7 +137,7 @@ open(_) ->
     {ok, #state{tab = Tab}}.
 
 handle_close(#state{tab = Tab}) ->
-    ets:delete(Tb),
+    ets:delete(Tab),
     ok.
 
 handle_insert(#state{tab = Tab}, Data) ->
@@ -159,7 +157,5 @@ handle_lookup(#state{tab = Tab}, Key) ->
     end.
 
 handle_match(#state{tab = Tab}, Pattern) ->
-    {ok, ets:match(Ets, Pattern)}.
-
-
+    {ok, ets:match(Tab, Pattern)}.
 

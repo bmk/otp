@@ -21,18 +21,34 @@
 -behaviour(gen_server).
 
 %% External exports
-%% Avoid warning for local function demonitor/1 clashing with autoimported BIF.
--export([start_link/2, stop/0, verbosity/1]).
+-export([start_link/3, stop/1, verbosity/2]).
+-export([variable_get/2, 
+	 variable_set/3, 
+	 variable_delete/2, 
+	 variable_inc/3, 
 
--export([
+	 table_create/2, table_exists/2, table_delete/2, 
+	 table_create_row/4, table_create_row/5, 
+	 table_delete_row/3, 
+	 table_get_row/3, 
+	 table_get_element/4, 
+	 table_get_elements/4, 
+	 table_set_elements/4, 
+	 table_set_status/7, 
 	 
 	]).
+
+-ifndef(no_old_style_behaviour_def).
+-export([behaviour_info/1]).
+-endif.
 
 %% gen_server callbacks
 -export([init/1, 
 	 handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2,
          code_change/3]).
+
+-export_type([void/0, open_option/0, open_options/0]).
 
 -include("snmpa_internal.hrl").
 -include("snmp_debug.hrl").
@@ -59,8 +75,16 @@
 -endif.
 
 
+-type void() :: term().
+-type open_options() :: [open_option()].
+-type open_option() :: {atom(), term()}.
+
+
+%%%-------------------------------------------------------------------
+%%% Local DB behaviour definition
 %%%-------------------------------------------------------------------
 
+-ifndef(no_old_style_behaviour_def).
 behaviour_info(callbacks) ->
     [{open,          1}, 
      {handle_close,  1},
@@ -70,6 +94,29 @@ behaviour_info(callbacks) ->
      {handle_match,  2}];
 behaviour_info(_) ->
     undefined.
+
+-else.
+
+-callback open(Options :: open_options()) ->
+    {ok, StorageState :: term()} | {error, Reason :: term()}.
+
+-callback handle_close(StorageState :: term()) ->
+    void().
+
+-callback handle_insert(StorageState :: term(), Data :: tuple()) ->
+    ok | {ok, NewStorageState :: term()}.
+
+-callback handle_delete(StorageState :: term(), Key :: term()) ->
+    ok | {ok, NewStorageState :: term()}.
+
+-callback handle_lookup(StorageState :: term(), Key :: term()) ->
+    undefined | {undefined, NewStorageState :: term()} | 
+    {ok, Value} | {ok, Value, NewStorageState :: term()}.
+
+-callback handle_match(StorageState :: term(), Pattern :: tuple()) ->
+    {ok, Match} | {ok, Match, NewStorageState :: term()}.
+
+-endif.
 
 
 %%%-------------------------------------------------------------------
@@ -170,9 +217,10 @@ do_init(Name, Module, Opts) ->
     put(sname, sname(Name)),
     put(verbosity, get_verbosity(Opts)),
     ?vlog("starting",[]),
-    case Module:open(#state{storage_module = Module}, Opts) of
-	{ok, State} ->
-	    {ok, State};
+    case Module:open(Opts) of
+	{ok, StorageState} ->
+	    {ok, #state{storage_module = Module, 
+			storage_state  = StorageState}};
 	{error, _} = Error ->
 	    {stop, Error}
     end.
@@ -185,82 +233,58 @@ do_init(Name, Module, Opts) ->
 %%-----------------------------------------------------------------
 %% Functions for debugging.
 %%-----------------------------------------------------------------
+
 print()      -> call(print).
 print(Table) -> call({print, Table, volatile}).
 
-variable_get(Name, Db}) ->
-    call({variable_get, Name, Db});
-variable_get(Name) ->
-    call({variable_get, Name, volatile}).
+variable_get(Storage, Variable) ->
+    call({variable_get, Storage, Variable}).
 
-variable_set({Name, Db}, Val) ->
-    call({variable_set, Name, Db, Val});
-variable_set(Name, Val) ->
-    call({variable_set, Name, volatile, Val}).
+variable_set(Storage, Variable, Val) ->
+    call({variable_set, Storage, Name, Val}).
 
-variable_inc({Name, Db}, N) ->
-    cast({variable_inc, Name, Db, N});
-variable_inc(Name, N) ->
-    cast({variable_inc, Name, volatile, N}).
+variable_inc(Storage, Variable, N) ->
+    cast({variable_inc, Storage, Variable, N}).
 
-variable_delete({Name, Db}) ->
-    call({variable_delete, Name, Db});
-variable_delete(Name) ->
-    call({variable_delete, Name, volatile}).
+variable_delete(Storage, Variable) ->
+    call({variable_delete, Storage, Variable}).
 
 
-table_create({Name, Db}) ->
-    call({table_create, Name, Db});
-table_create(Name) ->
-    call({table_create, Name, volatile}).
+table_create(Storage, Table) ->
+    call({table_create, Storage, Table}).
 
-table_exists({Name, Db}) ->
-    call({table_exists, Name, Db});
-table_exists(Name) ->
-    call({table_exists, Name, volatile}).
+table_exists(Storage, Table) ->
+    call({table_exists, Storage, Table}).
 
-table_delete({Name, Db}) ->
-    call({table_delete, Name, Db});
-table_delete(Name) ->
-    call({table_delete, Name, volatile}).
+table_delete(Storage, Table) ->
+    call({table_delete, Storage, Table}).
 
-table_delete_row({Name, Db}, RowIndex) ->
-    call({table_delete_row, Name, Db, RowIndex});
-table_delete_row(Name, RowIndex) ->
-    call({table_delete_row, Name, volatile, RowIndex}).
+table_create_row(Storage, Table, RowIndex, Row) ->
+    call({table_create_row, Storage, Table, RowIndex, Row}).
 
-table_get_row({Name, Db}, RowIndex) ->
-    call({table_get_row, Name, Db, RowIndex});
-table_get_row(Name, RowIndex) ->
-    call({table_get_row, Name, volatile, RowIndex}).
+table_create_row(Storage, Table, RowIndex, Status, Cols) ->
+    Row = table_construct_row(Table, RowIndex, Status, Cols),
+    table_create_row(Storage, Table, RowIndex, Row).
 
-table_get_element({Name, Db}, RowIndex, Col) ->
-    call({table_get_element, Name, Db, RowIndex, Col});
-table_get_element(Name, RowIndex, Col) ->
-    call({table_get_element, Name, volatile, RowIndex, Col}).
+table_delete_row(Storage, Table, RowIndex) ->
+    call({table_delete_row, Storage, Table, RowIndex}).
 
-table_set_elements({Name, Db}, RowIndex, Cols) ->
-    call({table_set_elements, Name, Db, RowIndex, Cols});
-table_set_elements(Name, RowIndex, Cols) ->
-    call({table_set_elements, Name, volatile, RowIndex, Cols}).
+table_get_row(Storage, Table, RowIndex) ->
+    call({table_get_row, Storage, Table, RowIndex}).
 
-table_next({Name, Db}, RestOid) ->
-    call({table_next, Name, Db, RestOid});
-table_next(Name, RestOid) ->
-    call({table_next, Name, volatile, RestOid}).
+table_get_element(Storage, Table, RowIndex, Col) ->
+    call({table_get_element, Storage, Table, RowIndex, Col}).
 
-table_max_col({Name, Db}, Col) ->
-    call({table_max_col, Name, Db, Col});
-table_max_col(Name, Col) ->
-    call({table_max_col, Name, volatile, Col}).
+table_set_elements(Storage, Table, RowIndex, Cols) ->
+    call({table_set_elements, Storage, Table, RowIndex, Cols}).
 
-table_create_row({Name, Db}, RowIndex, Row) ->
-    call({table_create_row, Name, Db,RowIndex, Row});
-table_create_row(Name, RowIndex, Row) ->
-    call({table_create_row, Name, volatile, RowIndex, Row}).
-table_create_row(NameDb, RowIndex, Status, Cols) ->
-    Row = table_construct_row(NameDb, RowIndex, Status, Cols),
-    table_create_row(NameDb, RowIndex, Row).
+
+table_next(Storage, Table, RestOid) ->
+    call({table_next, Storage, Table, RestOid}).
+
+table_max_col(Storage, Table, Col) ->
+    call({table_max_col, Storage, Table, Col}).
+
 
 match({Name, Db}, Pattern) ->
     call({match, Name, Db, Pattern});    
@@ -284,6 +308,115 @@ table_get(Table, Idx, Acc) ->
 		    table_get(Table, NextIdx, NewAcc)
 	    end
     end.
+
+
+%%------------------------------------------------------------------
+%%  Constructs a row with first elements the own part of RowIndex,
+%%  and last element RowStatus. All values are stored "as is", i.e.
+%%  dynamic key values are stored without length first.
+%%  RowIndex is a list of the
+%%  first elements. RowStatus is needed, because the
+%%  provided value may not be stored, e.g. createAndGo
+%%  should be active.
+%%  Returns a tuple of values for the row. If a value
+%%  isn't specified in the Col list, then the
+%%  corresponding value will be noinit.
+%%------------------------------------------------------------------
+table_construct_row(Table, RowIndex, Status, Cols) ->
+    #table_info{nbr_of_cols     = LastCol, 
+		index_types     = Indexes,
+                defvals         = Defs, 
+		status_col      = StatusCol,
+                first_own_index = FirstOwnIndex, 
+		not_accessible  = NoAccs} = snmp_generic:table_info(Name),
+    Keys    = snmp_generic:split_index_to_keys(Indexes, RowIndex),
+    OwnKeys = snmp_generic:get_own_indexes(FirstOwnIndex, Keys),
+    Row     = OwnKeys ++ snmp_generic:table_create_rest(length(OwnKeys) + 1,
+							LastCol, StatusCol,
+							Status, Cols, NoAccs),
+    L = snmp_generic:init_defaults(Defs, Row),
+    list_to_tuple(L).
+
+
+table_get_elements(Storage, Table, RowIndex, Cols, _FirstOwnIndex) ->
+    get_elements(Cols, table_get_row(Storage, Table, RowIndex)).
+
+get_elements(_Cols, undefined) -> 
+    undefined;
+get_elements([Col | Cols], Row) when is_tuple(Row) and (size(Row) >= Col) ->
+    [element(Col, Row) | get_elements(Cols, Row)];
+get_elements([], _Row) -> 
+    [];
+get_elements(Cols, Row) ->
+    erlang:error({bad_arguments, Cols, Row}).
+
+
+%%----------------------------------------------------------------------
+%% This should/could be a generic function, but since Mnesia implements
+%% its own and this version still is local_db dependent, it's not generic yet.
+%%----------------------------------------------------------------------
+
+%% *** createAndGo ***
+
+table_set_status(Storage, Table, RowIndex, 
+		 ?'RowStatus_createAndGo', 
+		 StatusCol, Cols, ChangedStatusFunc, _ConsFunc) ->
+    case table_create_row(Storage, Table, RowIndex, 
+			  ?'RowStatus_active', Cols) of
+        true -> 
+	    snmp_generic:try_apply(ChangedStatusFunc,
+				   [Storage, Table, 
+				    ?'RowStatus_createAndGo',
+				    RowIndex, Cols]);
+        _ -> 
+	    {commitFailed, StatusCol}
+    end;
+
+
+%% *** createAndWait *** 
+%% Set status to notReady, and try to make row consistent.
+
+table_set_status(Storage, Table, RowIndex, 
+		 ?'RowStatus_createAndWait', 
+		 StatusCol, Cols, ChangedStatusFunc, ConsFunc) ->
+    case table_create_row(Storage, Table, RowIndex, 
+			  ?'RowStatus_notReady', Cols) of
+        true -> 
+            case snmp_generic:try_apply(ConsFunc, 
+					[Storage, Table, RowIndex, Cols]) of
+                {noError, 0} ->
+                    snmp_generic:try_apply(ChangedStatusFunc, 
+                                           [Storage, Table, 
+					    ?'RowStatus_createAndWait',
+                                            RowIndex, Cols]);
+                Error -> 
+		    Error
+            end;
+        _ -> 
+	    {commitFailed, StatusCol}
+    end;
+    
+
+%% *** destroy ***
+
+table_set_status(Storage, Table, RowIndex, 
+		 ?'RowStatus_destroy', _StatusCol, Cols,
+                 ChangedStatusFunc, _ConsFunc) ->
+    case snmp_generic:try_apply(ChangedStatusFunc,
+                                [Storage, Table, 
+				 ?'RowStatus_destroy',
+                                 RowIndex, Cols]) of
+        {noError, 0} ->
+            table_delete_row(Storage, Table, RowIndex),
+            {noError, 0};
+        Error -> Error
+    end;
+
+%% *** Otherwise (active or notInService) ***
+table_set_status(Storage, Table, RowIndex, Val, _StatusCol, Cols,
+                 ChangedStatusFunc, ConsFunc) ->
+    snmp_generic:table_set_cols(Storage, Table, RowIndex, Cols, ConsFunc),
+    snmp_generic:try_apply(ChangedStatusFunc, [Storage, Table, Val, RowIndex, Cols]).
 
 
 %%-----------------------------------------------------------------
@@ -637,7 +770,8 @@ close(#state{storage_module = Module,
 
 insert(#state{storage_module = Module, 
 	      storage_state  = StorageState} = State, Key, Value) ->
-    try Module:handle_insert(StorageState, Key, Value) of
+    Data = {Key, Value}, 
+    try Module:handle_insert(StorageState, Data) of
 	{ok, NewStorageState} ->
 	    {true, State#state{storage_state = NewStorageState}};	    
 	ok ->
