@@ -49,11 +49,11 @@
 	 handle_negotiate/2]).
 
 %% This is for future use...
--record(httpc_ipcomm_state, {}).
+-record(http_ipcomm_state, {}).
 
 
 start() ->
-    httpc_transport:start(?MODULE, []).
+    http_transport:start(?MODULE, []).
 
 
 %% --- listen/3 ---
@@ -65,64 +65,64 @@ listen(TransportState, Addr, Port, MaybeFD) ->
 %% --- connect/3,4 ---
 
 connect(TransportState, To, Opts) ->
-    httpc_transport:connect(TransportState, To, Opts).
+    http_transport:connect(TransportState, To, Opts).
 
 connect(TransportState, To, Opts, Timeout) ->
-    httpc_transport:connect(TransportState, To, Opts, Timeout).
+    http_transport:connect(TransportState, To, Opts, Timeout).
 
 
 %% --- send/2 ---
 
 send(Socket, Message) ->
-    httpc_transport:send(Socket, Message).
+    http_transport:send(Socket, Message).
 
 
 %% --- send/2 ---
 
 close(Socket) ->
-    httpc_transport:close(Socket).
+    http_transport:close(Socket).
 
 
 %% --- setopts/2 ---
 
 setopts(Socket, Opts) ->
-    httpc_transport:setopts(Socket, Opts).
+    http_transport:setopts(Socket, Opts).
 
 
 %% --- getopts/1,2 ---
 
 getopts(Socket) ->
-    httpc_transport:getopts(Socket).
+    http_transport:getopts(Socket).
 
 getopts(Socket, Opts) ->
-    httpc_transport:getopts(Socket, Opts).
+    http_transport:getopts(Socket, Opts).
 
 
 %% --- getopts/1,2 ---
 
 getstat(Socket) ->
-    httpc_transport:getstat(Socket).
+    http_transport:getstat(Socket).
 
 
 %% --- peername/1 ---
 
 peername(Socket) ->
-    httpc_transport:peername(Socket).
+    http_transport:peername(Socket).
 
 
 %% --- peername/1 ---
 
 sockname(Socket) ->
-    httpc_transport:sockname(Socket).
+    http_transport:sockname(Socket).
 
 
 %% --- negotiate/1,2 ---
 
 negotiate(Socket) ->
-    httpc_transport:negotiate(Socket).
+    http_transport:negotiate(Socket).
 
 negotiate(Socket, Timeout) ->
-    httpc_transport:negotiate(Socket, Timeout).
+    http_transport:negotiate(Socket, Timeout).
 
 
 %%----------------------------------------------------------------------

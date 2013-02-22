@@ -23,7 +23,7 @@
 
 -export([
 	 start/2, 
-	 connect/3, connect/4, 
+	 connect/4, connect/5, 
 	 send/2,
 	 setopts/2, 
 	 getopts/1, getopts/2, 
@@ -34,6 +34,7 @@
 	 negotiate/2
 	]).
 
+%% Utility functions for implementors of this behaviour
 -export([
 	 which_transport/1, 
 	 ipv4_name/1, 
@@ -52,19 +53,19 @@
 
 behaviour_info(callbacks) ->
     [
-     {init,        1},
-     {listen,      3}, 
-     {listen,      4}, 
-     {listen_args, 6}, 
-     {connect,     5}, 
-     {close,       1}, 
-     {send,        2}, 
-     {setopts,     2}, 
-     {getopts,     2}, 
-     {getstat,     1}, 
-     {peername,    1}, 
-     {sockname,    1}, 
-     {negotiate,   2} 
+     {init,               1},
+     {handle_listen,      3}, 
+     {handle_listen,      4}, 
+     {handle_listen_args, 6}, 
+     {handle_connect,     5}, 
+     {handle_close,       1}, 
+     {handle_send,        2}, 
+     {handle_setopts,     2}, 
+     {handle_getopts,     2}, 
+     {handle_getstat,     1}, 
+     {handle_peername,    1}, 
+     {handle_sockname,    1}, 
+     {handle_negotiate,   2} 
     ];
 behaviour_info(_Other) ->
     undefined.
@@ -86,15 +87,15 @@ start(Mod, Opts) ->
     end.
 
 
-connect(State, To, Opts) ->
-    connect(State, To, Opts, infinity).
+connect(State, Host, Port, Opts) ->
+    connect(State, Host, Port, Opts, infinity).
 
 connect(#httpc_transport_state{mod       = Mod, 
 			       mod_state = ModState}, 
-	{Host, Port}, Opts, Timeout) ->
-    try Mod:connect(ModState, Host, Port, Opts, Timeout) of
+	Host, Port, Opts, Timeout) ->
+    try Mod:handle_connect(ModState, Host, Port, Opts, Timeout) of
 	{ok, Socket} ->
-	    {ok, #httpc_transport_socket{mod = Mod, sock = Socket}};
+	    {ok, #http_transport_socket{mod = Mod, sock = Socket}};
 	{error, _} = ERROR ->
 	    ERROR
     catch
@@ -115,24 +116,24 @@ listen(#httpc_transport_state{mod       = Mod,
 			      mod_state = ModState}, 
        Addr, Port, IpFamily0, MaybeFD) ->
     BaseOpts        = [{backlog, 128}, {reuseaddr, true}],
-    try Mod:listen_args(Addr, Port, MaybeFD, BaseOpts, IpFamily0) of
+    try Mod:handle_listen_args(Addr, Port, MaybeFD, BaseOpts, IpFamily0) of
 	{NewPort, Opts, inet6fb4} when is_integer(NewPort) andalso 
 				       (newPort >= 0) andalso 
 				       is_lists(Opts) ->
 	    %% We should try to use IPv6 first, 
 	    %% and only if that fails, use IPv4
 	    Opts2 = [inet6 | Opts], 
-	    case (catch Mod:listen(ModState, NewPort, Opts2)) of
+	    case (catch Mod:handle_listen(ModState, NewPort, Opts2)) of
 		{error, {no_ipv6_support, _} ->
 		    Opts3 = [inet | Opts], 
-		    Mod:listen(ModState, NewPort, Opts3);
+		    Mod:handle_listen(ModState, NewPort, Opts3);
 
 		%% This is when a given hostname has resolved to a 
                 %% IPv4-address. The inet6-option together with a 
                 %% {ip, IPv4} option results in badarg
 		{'EXIT', _} ->
 		    Opts3 = [inet | Opts], 
-		    Mod:listen(ModState, NewPort, Opts3);
+		    Mod:handle_listen(ModState, NewPort, Opts3);
 
 		Other ->
 		    Other
@@ -142,7 +143,7 @@ listen(#httpc_transport_state{mod       = Mod,
 				       (newPort >= 0) andalso 
 				       is_lists(Opts) ->
 	    Opts2 = [IpFamily | Opts],
-	    Mod:listen(ModState, NewPort, Opts2)
+	    Mod:handle_listen(ModState, NewPort, Opts2)
     catch
 	throw:{error, Reason} ->
 	    {error, Reason};
@@ -153,7 +154,7 @@ listen(#httpc_transport_state{mod       = Mod,
 send(#httpc_transport_socket{mod = Mod, sock = Socket}, Message) ->
     try
 	begin
-	    Mod:send(Socket, Message)
+	    Mod:handle_send(Socket, Message)
 	end
     catch
 	T:E ->
@@ -165,7 +166,7 @@ send(#httpc_transport_socket{mod = Mod, sock = Socket}, Message) ->
 setopts(#httpc_transport_socket{mod = Mod, sock = Socket}, Options) ->
     try
 	begin
-	    Mod:setopts(Socket, Options)
+	    Mod:handle_setopts(Socket, Options)
 	end
     catch
 	T:E ->
@@ -186,7 +187,7 @@ getopts(Socket) ->
 getopts(#httpc_transport_socket{mod = Mod, sock = Socket}, Options) ->
     try 
 	begin
-	    Mod:getopts(Socket, Options)
+	    Mod:handle_getopts(Socket, Options)
 	end
     catch
 	T:E ->
@@ -196,7 +197,7 @@ getopts(#httpc_transport_socket{mod = Mod, sock = Socket}, Options) ->
 
 
 getstat(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
-    try Mod:getstat(Socket) of
+    try Mod:handle_getstat(Socket) of
 	{ok, Stats} ->
 	    Stats;
 	_ ->
@@ -208,12 +209,12 @@ getstat(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
 
 
 close(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
-    (catch Mod:close(Socket)),
+    (catch Mod:handle_close(Socket)),
     ok.
 
 
 peername(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
-    try Mod:peername(Socket) of
+    try Mod:handle_peername(Socket) of
 	{ok, {Addr, Port}} when is_tuple(Addr) andalso (size(Addr) =:= 4) ->
             PeerName = ipv4_name(Addr), 
             {Port, PeerName};
@@ -229,7 +230,7 @@ peername(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
 
 	
 sockname(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
-    try Mod:sockname(Socket) of
+    try Mod:handle_sockname(Socket) of
 	{ok, {Addr, Port}} when is_tuple(Addr) andalso (size(Addr) =:= 4) ->
             PeerName = ipv4_name(Addr), 
             {Port, PeerName};
@@ -247,7 +248,7 @@ sockname(#httpc_transport_socket{mod = Mod, sock = Socket}) ->
 negotiate(#httpc_transport_socket{mod = Mod, sock = Socket}, Timeout) ->
     try
 	begin
-	    Mod:negotiate(Socket, Timeout)
+	    Mod:handle_negotiate(Socket, Timeout)
 	end
     catch
 	T:E ->

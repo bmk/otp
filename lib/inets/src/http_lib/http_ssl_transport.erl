@@ -19,7 +19,7 @@
 
 -module(http_ssl_transport).
 
--behaviour(httpc_transport).
+-behaviour(http_transport).
 
 %% API
 -export([start/1, 
@@ -45,20 +45,23 @@
 	 handle_sockname/1, 
 	 handle_negotiate/2]).
 
--record(httpc_ssl_state, {config = []}).
+-record(http_ssl_state, {config = []}).
 
 
 start(SslConfig) ->
-    httpc_transport:start(?MODULE, [SslConfig]).
+    http_transport:start(?MODULE, [SslConfig]).
 
 
 %% --- connect/3,4 ---
 
+-spec connect(TransportState :: term(), To :: ip_address(), Opts :: list()) ->
+		     {ok, Socket :: term()} | {error, Reason :: term()}.
+
 connect(TransportState, To, Opts) ->
-    httpc_transport:connect(TransportState, To, Opts).
+    http_transport:connect(TransportState, To, Opts).
 
 connect(TransportState, To, Opts, Timeout) ->
-    httpc_transport:connect(TransportState, To, Opts, Timeout).
+    http_transport:connect(TransportState, To, Opts, Timeout).
 
 
 %% --- send/2 ---
