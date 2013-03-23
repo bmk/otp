@@ -1,0 +1,114 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%
+%% %CopyrightBegin%
+%%
+%% Copyright Ericsson AB 2012-2012. All Rights Reserved.
+%%
+%% The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved online at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% %CopyrightEnd%
+%%
+
+-mode(compile).
+
+%% ------------------------------------------------------------------------
+%% Valid arguments: 
+%% --o Dir [defaults to "./"]
+%% --i Dir [defaults to "./"]
+%% --il Dir
+%% --sgc
+%% --db DB [defaults to volatile]
+%% --dep
+%% --desc
+%% --ref
+%% --imp
+%% --mi
+%% --mc
+%% --ac
+%% --mod Mod
+%% --nd
+%% --rrnac
+%% --version
+%% --verbosity V
+%% --warnings | --W
+%% --Werror | --wae | --warnings_as_errors
+main(Args) when is_list(Args) ->
+    case (catch process_args(Args)) of
+        ok ->
+            usage();
+        {ok, State} when is_record(State, state) ->
+            compile(State);
+        {ok, Str} when is_list(Str) ->
+            io:format("~s~n~n", [Str]),
+            halt(1);
+        {error, ReasonStr} ->
+            usage(ReasonStr)
+    end;
+main(_) ->
+    usage().
+
+usage(ReasonStr) ->
+    io:format("ERROR: ~s~n", [ReasonStr]),
+    usage().
+
+usage() ->
+    io:format("Usage: mstone1 [options]"
+              "~nThis (e)script runs the MStone 1 performance suite. "
+              "~nIt is a simple performance utility using the megaco codecs. "
+              "~nOptions:"
+              "~n   --help                   - Prints this info."
+              "~n   --mp <message package>   - Message package to use for test."
+              "~n                              Defaults to time_test."
+              "~n   --phs <num>              - Default process head size."
+              "~n   --atps <num>             - Async thread pool size (defaults to 0)."
+              "~n   --factor <num>           - Normally the test is run with 16 processes "
+	      "~n                              (factor 1), one for each codec config. "
+	      "~n                              The test can however be run with other "
+	      "~n                              factors, e.g. factor 10 means that 10 "
+	      "~n                              processes will be started for each megaco "
+	      "~n                              codec config.
+	      "~n                              The options *scheds* and *factor* cannot both "
+	      "~n                              be present."
+              "~n   --scheds <num>           - normally the test is run with a fixed factor, "
+	      "~n                              but if this option is given, the number of "
+	      "~n                              schedulers is fixed (to the value set by this "
+	      "~n                              option) and the factor is the variable. "
+	      "~n                              The options *scheds" and *factor* cannot both "
+	      "~n                              be present. "
+              "~n   --drv <driver mode>      - Driver mode for the test: "
+	      "~n                              std  - all codec config(s) will be used "
+	      "~n                              flex - only the text codec config(s) utilizing "
+	      "~n                                     flex scanner will be used	"
+	      "~n                              nd   - only codec config(s) without drivers will "
+	      "~n                                     be used "
+	      "~n                              od   - only codec config(s) with drivers will be "
+	      "~n                                     used "
+              "~n   --sbt <bind type>        - Set scheduler bind type. "
+	      "~n                              See erl man page for more info. "
+	      "~n                              tnnps - Thread no node processor spread (default) "
+	      "~n                              u     - Unbound "
+	      "~n                              ns    - No spread "
+	      "~n                              ts    - Thread spread "
+	      "~n                              ps    - Processor spread "
+	      "~n                              s     - Spread "
+	      "~n                              nnts  - No node thread spread "
+	      "~n                              nnps  - No node processor spread "
+	      "~n   --                       everything after this is just passed on to erl. "
+              "~n   "
+              "~n", []),
+    halt(1).
+
+
+e(Reason) ->
+    throw({error, Reason}).
+
