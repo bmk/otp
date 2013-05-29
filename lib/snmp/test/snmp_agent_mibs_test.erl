@@ -178,10 +178,13 @@ end_per_testcase(_Case, Config) when is_list(Config) ->
 %%======================================================================
 
 all() -> 
-    cases().
+    [{group, tttn}, {group, tttn2}].
 
 groups() -> 
-    [{size_check, [],
+    [
+     {tttn,  [], cases()},         % All cases run with the tttn module
+     {tttn2, [], cases()},         % All cases run with the tttn2 module
+     {size_check, [],
       [
        size_check_ets1,            % Plain ets
        size_check_ets2,            % ets with a file
@@ -194,6 +197,13 @@ groups() ->
      }].
 
 
+
+init_per_group(tttn = GroupName, Config) ->
+    Config2 = [{data_module, snmpa_mib_data_tttn}|Config], 
+    snmp_test_lib:init_group_top_dir(GroupName, Config2);
+init_per_group(tttn2 = GroupName, Config) ->
+    Config2 = [{data_module, snmpa_mib_data_tttn2}|Config], 
+    snmp_test_lib:init_group_top_dir(GroupName, Config2);
 init_per_group(GroupName, Config) ->
     snmp_test_lib:init_group_top_dir(GroupName, Config).
 
@@ -220,11 +230,12 @@ cases() ->
 
 start_and_stop(suite) -> [];
 start_and_stop(Config) when is_list(Config) ->
-    Prio      = normal,
-    Verbosity = trace,
+    DataModule = ?config(data_module, Config), 
+    Prio       = normal,
+    Verbosity  = trace,
 
     ?line sym_start(Prio, Verbosity),
-    ?line MibsPid = mibs_start(Prio, Verbosity),
+    ?line MibsPid = mibs_start(DataModule, Prio, Verbosity),
 
     ?line mibs_info(MibsPid),
 
@@ -238,6 +249,7 @@ start_and_stop(Config) when is_list(Config) ->
 
 load_unload(suite) -> [];
 load_unload(Config) when is_list(Config) ->
+    DataModule = ?config(data_module, Config), 
     Prio       = normal,
     Verbosity  = log,
     MibDir     = ?config(data_dir, Config),
@@ -246,7 +258,7 @@ load_unload(Config) when is_list(Config) ->
     ?line sym_start(Prio, Verbosity),
 
     ?DBG("load_unload -> start mib server", []),
-    ?line MibsPid = mibs_start(Prio, Verbosity),
+    ?line MibsPid = mibs_start(DataModule, Prio, Verbosity),
     
     ?DBG("load_unload -> load one not already loaded mib", []),
     ?line ok = verify_loaded_mibs(MibsPid, MibDir, []),
@@ -347,8 +359,9 @@ size_check_mnesia(Config) when is_list(Config) ->
 do_size_check(Config) ->
     ?DBG("do_size_check -> start with"
 	 "~n   Config: ~p", [Config]),
-    Prio      = normal,
-    Verbosity = trace,
+    DataModule = ?config(data_module, Config), 
+    Prio       = normal,
+    Verbosity  = trace,
 
     MibStorage = ?config(mib_storage, Config),
     ?DBG("do_size_check -> MibStorage: ~p", [MibStorage]),
@@ -358,7 +371,7 @@ do_size_check(Config) ->
     ?DBG("do_size_check -> start symbolic store", []),
     ?line sym_start(Prio, MibStorage, Verbosity),
     ?DBG("do_size_check -> start mib server", []),
-    ?line MibsPid = mibs_start(Prio, MibStorage, Verbosity),
+    ?line MibsPid = mibs_start(DataModule, Prio, MibStorage, Verbosity),
 
     Mibs    = ["Test2", "TestTrap", "TestTrapv2"],
     StdMibs = ["OTP-SNMPEA-MIB",
@@ -400,6 +413,7 @@ do_size_check(Config) ->
 
 me_lookup(suite) -> [];
 me_lookup(Config) when is_list(Config) ->
+    DataModule = ?config(data_module, Config), 
     Prio       = normal,
     Verbosity  = trace,
     MibDir     = ?config(data_dir, Config),
@@ -421,7 +435,7 @@ me_lookup(Config) when is_list(Config) ->
     ?line sym_start(Prio, Verbosity),
 
     ?DBG("me_lookup -> start mib server", []),
-    ?line MibsPid = mibs_start(Prio, Verbosity),
+    ?line MibsPid = mibs_start(DataModule, Prio, Verbosity),
     
     ?DBG("me_lookup -> load mibs", []),
     ?line load_mibs(MibsPid, MibDir, Mibs),
@@ -453,6 +467,7 @@ me_lookup(Config) when is_list(Config) ->
 
 which_mib(suite) -> [];
 which_mib(Config) when is_list(Config) ->
+    DataModule = ?config(data_module, Config), 
     Prio       = normal,
     Verbosity  = trace,
     MibDir     = ?config(data_dir, Config),
@@ -474,7 +489,7 @@ which_mib(Config) when is_list(Config) ->
     ?line sym_start(Prio, Verbosity),
 
     ?DBG("which_mib -> start mib server", []),
-    ?line MibsPid = mibs_start(Prio, Verbosity),
+    ?line MibsPid = mibs_start(DataModule, Prio, Verbosity),
     
     ?DBG("which_mib -> load mibs", []),
     ?line load_mibs(MibsPid, MibDir, Mibs),
@@ -510,6 +525,7 @@ which_mib(Config) when is_list(Config) ->
 cache_test(suite) -> [];
 cache_test(Config) when is_list(Config) ->
     ?DBG("cache_test -> start", []),
+    DataModule = ?config(data_module, Config), 
     Prio       = normal,
     Verbosity  = trace,
     MibStorage = [{module, snmpa_mib_storage_ets}],
@@ -535,7 +551,8 @@ cache_test(Config) when is_list(Config) ->
     GcLimit   = 2, 
     Age       = timer:seconds(10), 
     CacheOpts = [{autogc, false}, {age, Age}, {gclimit, GcLimit}],
-    ?line MibsPid = mibs_start(Prio, MibStorage, [], Verbosity, CacheOpts), 
+    ?line MibsPid = mibs_start(DataModule, 
+			       Prio, MibStorage, [], Verbosity, CacheOpts), 
     
     ?DBG("cache_test -> load mibs", []),
     ?line load_mibs(MibsPid, MibDir, Mibs),
@@ -659,25 +676,23 @@ sym_info() ->
 
 %% -- MIB server mini interface 
 		   
-mibs_start(Prio, Verbosity) when is_atom(Prio) andalso is_atom(Verbosity) ->
-    mibs_start(Prio, mib_storage(), [], Verbosity).
+mibs_start(DataModule, Prio, Verbosity) ->
+    mibs_start(DataModule, Prio, mib_storage(), [], Verbosity).
 
-mibs_start(Prio, MibStorage, Verbosity) 
-  when is_atom(Prio) andalso is_atom(Verbosity) ->
-    mibs_start(Prio, MibStorage, [], Verbosity).
+mibs_start(DataModule, Prio, MibStorage, Verbosity) ->
+    mibs_start(DataModule, Prio, MibStorage, [], Verbosity).
 
-mibs_start(Prio, MibStorage, Mibs, Verbosity) 
-  when is_atom(Prio)       andalso 
-       is_list(Mibs)       andalso 
-       is_atom(Verbosity) ->
-    mibs_start(Prio, MibStorage, Mibs, Verbosity, []).
+mibs_start(DataModule, Prio, MibStorage, Mibs, Verbosity) ->
+    mibs_start(DataModule, Prio, MibStorage, Mibs, Verbosity, []).
 
-mibs_start(Prio, MibStorage, Mibs, Verbosity, CacheOpts) 
-  when is_atom(Prio)       andalso 
+mibs_start(DataModule, Prio, MibStorage, Mibs, Verbosity, CacheOpts) 
+  when is_atom(DataModule) andalso 
+       is_atom(Prio)       andalso 
        is_list(Mibs)       andalso 
        is_atom(Verbosity)  andalso 
        is_list(CacheOpts) ->
-    Opts = [{mib_storage, MibStorage}, 
+    Opts = [{data_module, DataModule}, 
+	    {mib_storage, MibStorage}, 
 	    {verbosity,   Verbosity}, 
 	    {cache,       CacheOpts}],
     {ok, Pid} = snmpa_mib:start_link(Prio, Mibs, Opts),

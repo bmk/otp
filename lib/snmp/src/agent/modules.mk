@@ -51,6 +51,7 @@ MODULES = \
 	snmpa_mib_storage_mnesia \
 	snmpa_mib \
 	snmpa_mib_data_tttn \
+	snmpa_mib_data_tttn2 \
 	snmpa_mib_lib \
 	snmpa_misc_sup \
 	snmpa_mpd \

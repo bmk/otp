@@ -252,6 +252,7 @@ init_group_top_dir(GroupName, Config) ->
 	    [{snmp_group_top_dir, GroupTopDir} | Config];
 
 	_ ->
+	    %% This is a "root" group - look for the top-dir instead
 	    case lists:keysearch(snmp_suite_top_dir, 1, Config) of
 		{value, {_Key, Dir}} ->
 		    GroupTopDir = filename:join(Dir, GroupName),

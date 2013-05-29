@@ -107,7 +107,15 @@ $(EBIN)/snmpa_mib_data.$(EMULATOR): \
 	../../include/snmp_types.hrl
 
 $(EBIN)/snmpa_mib_data_tttn.$(EMULATOR): \
+	snmpa_mib_data.erl \
 	snmpa_mib_data_tttn.erl \
+	../misc/snmp_debug.hrl \
+	../misc/snmp_verbosity.hrl \
+	../../include/snmp_types.hrl
+
+$(EBIN)/snmpa_mib_data_tttn2.$(EMULATOR): \
+	snmpa_mib_data.erl \
+	snmpa_mib_data_tttn2.erl \
 	../misc/snmp_debug.hrl \
 	../misc/snmp_verbosity.hrl \
 	../../include/snmp_types.hrl

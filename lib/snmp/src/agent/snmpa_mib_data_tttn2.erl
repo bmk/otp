@@ -279,7 +279,7 @@ do_load_mib(MibData, ActualFileName, MibName, MeOverride, TeOverride) ->
 verify_not_loaded(Mod, Db, Name) ->
     case Mod:read(Db, Name) of
         {value, #mib_info{name = Name}} ->
-            throw({error, 'already loaded'});
+            throw({error, already_loaded});
         false ->
             ok
     end.
@@ -330,7 +330,7 @@ delete_subagents(Tree0, [{_, Oid}|SAs]) ->
         {tree, _Tree, _Info} = Tree1 ->
             delete_subagents(Tree1, SAs);
         _Error ->
-            {error, {'invalid oid', Oid}}
+            {error, {invalid_oid, Oid}}
     end.
 
 
@@ -357,7 +357,7 @@ check_notifications([#trap{trapname = Key} = Trap | Traps]) ->
     ?vtrace("check notification [trap] with Key: ~p",[Key]),
     case snmpa_symbolic_store:get_notification(Key) of
         {value, Trap} -> check_notifications(Traps);
-        {value,    _} -> throw({error, {'trap already defined', Key}});
+        {value,    _} -> throw({error, {trap_already_defined, Key}});
         undefined     -> check_notifications(Traps)
     end;
 check_notifications([#notification{trapname = Key} = Notif | Traps]) ->
@@ -366,7 +366,7 @@ check_notifications([#notification{trapname = Key} = Notif | Traps]) ->
         {value, Notif} ->
             check_notifications(Traps);
         {value,     _} ->
-            throw({error, {'notification already defined', Key}});
+            throw({error, {notification_already_defined, Key}});
         undefined      ->
             check_notifications(Traps)
     end;
@@ -388,7 +388,7 @@ check_mes([#me{aliasname = Name, oid = Oid1} | MEs]) ->
             check_mes(MEs);
         {value, _Oid2} ->
             ?vinfo("~n   expecting '~p'~n   but found '~p'",[Oid1, _Oid2]),
-            throw({error, {'mibentry already defined', Name}});
+            throw({error, {mibentry_already_defined, Name}});
         false ->
             check_mes(MEs)
     end;
@@ -425,7 +425,7 @@ verify_loaded(Mod, Db, Name) ->
         {value, MibInfo} ->
             MibInfo;
         false ->
-            throw({error, 'not loaded'})
+            throw({error, not_loaded})
     end.
 
 
@@ -445,7 +445,7 @@ register_subagent(#mib_data{tree = T} = MibData, Oid, Pid) ->
         NewRootTree ->
             SAs = [{Pid, Oid} | MibData#mib_data.subagents],
             T2 = T#tree{root = NewRootTree},
-            MibData#mib_data{tree = T2, subagents = SAs}
+            {ok, MibData#mib_data{tree = T2, subagents = SAs}}
     end.
 
 
@@ -480,7 +480,7 @@ whereis_mib(#mib_data{module = Mod, mib_db = Db}, Name) ->
 unregister_subagent(MibData, Pid) when is_pid(Pid) ->
     SAs = MibData#mib_data.subagents,
     case lists:keysearch(Pid, 1, SAs) of
-        false -> MibData;
+        false -> {ok, MibData};
         {value, {Pid, Oid}} ->
             % we should never get an error since Oid is found in MibData.
             {ok, NewMibData, _DeletedSA} = unregister_subagent(MibData, Oid),
@@ -503,7 +503,7 @@ unregister_subagent(#mib_data{tree = T} = MibData, Oid) when is_list(Oid) ->
              MibData#mib_data{tree = T2, subagents = SAs},
              Pid};
         _ ->
-            {error, {'invalid oid', Oid}}
+            {error, {invalid_oid, Oid}}
     end.
 
 %%----------------------------------------------------------------------
@@ -1253,7 +1253,7 @@ insert_subagent(Oid, OldRoot) ->
     ListTree = build_tree_for_subagent(Oid),
     case catch convert_tree(ListTree) of
         {'EXIT', _Reason} ->
-            {error, 'cannot construct tree from oid'};
+            {error, {cannot_construct_tree_from_oid, Oid}};
         Level when is_tuple(Level) ->
             T = {tree, Level, internal},
             case catch merge_nodes(T, OldRoot) of
@@ -1385,7 +1385,7 @@ uninstall_mib2(_, _) ->
     ok.
 
 uninstall_mes(Mod, Db, MibName) ->
-    Pattern = #node_info{oid = '_', mib_name = MibName, me = '_'},
+    Pattern = #node_info{mib_name = MibName, _ = '_'},
     Mod:match_delete(Db, Pattern).
 
 
