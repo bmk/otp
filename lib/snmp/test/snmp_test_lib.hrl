@@ -75,6 +75,7 @@
 -define(M(),            snmp_test_lib:millis()).
 -define(MDIFF(A,B),     snmp_test_lib:millis_diff(A,B)).
 
+
 %% - Process utility macros - 
 
 -define(FLUSH(),        snmp_test_lib:flush_mqueue()).

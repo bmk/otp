@@ -31,11 +31,11 @@
 	 init_per_group/2,    end_per_group/2, 
 	 init_per_testcase/2, end_per_testcase/2, 
 
-	 %% all_tcs - misc
+	 %% main - misc
 	 app_info/1, 
 	 info_test/1, 
 
-	 %% all_tcs - test_v1
+	 %% main - test_v1
 	 simple/1, 
 	 db_notify_client/1, 
 	 v1_processing/1, 
@@ -55,7 +55,7 @@
 	 opaque/1, 
 	 change_target_addr_config/1, 
 
-	 %% all_tcs - test_v1 - multiple_reqs
+	 %% main - test_v1 - multiple_reqs
 	 mul_get/1, 
 	 mul_get_err/1, 
 	 mul_next/1, 
@@ -63,7 +63,7 @@
 	 mul_set/1, 
 	 mul_set_err/1, 
 
-	 %% all_tcs - test_v1 - reported_bugs
+	 %% main - test_v1 - reported_bugs
 	 otp_1128/1, 
 	 otp_1129/1, 
 	 otp_1131/1, 
@@ -79,7 +79,7 @@
 	 otp_3187/1, 
 	 otp_3725/1, 
 
-	 %% all_tcs - test_v1 - standard_mibs
+	 %% main - test_v1 - standard_mibs
 	 snmp_standard_mib/1, 
 	 snmp_community_mib/1,
 	 snmp_framework_mib/1, 
@@ -87,7 +87,7 @@
 	 snmp_notification_mib/1, 
 	 snmp_view_based_acm_mib/1, 
 
-	 %% all_tcs - test_v2
+	 %% main - test_v2
 	 simple_2/1, 
 	 v2_processing/1, 
 	 big_2/1, 
@@ -108,7 +108,7 @@
 	 opaque_2/1, 
 	 v2_caps/1,
 
-	 %% all_tcs - test_v2 - multiple_reqs_2
+	 %% main - test_v2 - multiple_reqs_2
 	 mul_get_2/1, 
 	 mul_get_err_2/1, 
 	 mul_next_2/1, 
@@ -116,10 +116,10 @@
 	 mul_set_2/1, 
 	 mul_set_err_2/1, 
 
-	 %% all_tcs - test_v2 - v2_inform
+	 %% main - test_v2 - v2_inform
 	 v2_inform_i/1, 
 
-	 %% all_tcs - test_v2 - reported_bugs_2
+	 %% main - test_v2 - reported_bugs_2
 	 otp_1128_2/1, 
 	 otp_1129_2/1, 
 	 otp_1131_2/1, 
@@ -134,7 +134,7 @@
 	 otp_2979_2/1, 
 	 otp_3187_2/1, 
 
-	 %% all_tcs - test_v2 - standard_mibs_2
+	 %% main - test_v2 - standard_mibs_2
 	 snmpv2_mib_2/1, 
 	 snmp_community_mib_2/1,
 	 snmp_framework_mib_2/1, 
@@ -142,10 +142,10 @@
 	 snmp_notification_mib_2/1, 
 	 snmp_view_based_acm_mib_2/1,
 
-	 %% all_tcs - test_v1_v2
+	 %% main - test_v1_v2
 	 simple_bi/1, 
 
-	 %% all_tcs - test_v3
+	 %% main - test_v3
 	 simple_3/1, 
 	 v3_processing/1, 
 	 big_3/1, 
@@ -166,7 +166,7 @@
 	 opaque_3/1, 
 	 v2_caps_3/1, 
 
-	 %% all_tcs - test_v3 - multiple_reqs_3
+	 %% main - test_v3 - multiple_reqs_3
 	 mul_get_3/1, 
 	 mul_get_err_3/1, 
 	 mul_next_3/1, 
@@ -174,10 +174,10 @@
 	 mul_set_3/1,
 	 mul_set_err_3/1,
 
-	 %% all_tcs - test_v3 - v3_inform
+	 %% main - test_v3 - v3_inform
 	 v3_inform_i/1, 
 
-	 %% all_tcs - test_v3 - reported_bugs_3
+	 %% main - test_v3 - reported_bugs_3
 	 otp_1128_3/1, 
 	 otp_1129_3/1, 
 	 otp_1131_3/1, 
@@ -193,7 +193,7 @@
 	 otp_3187_3/1,
 	 otp_3542/1,
 
-	 %% all_tcs - test_v3 - standard_mibs_3
+	 %% main - test_v3 - standard_mibs_3
 	 snmpv2_mib_3/1, 
 	 snmp_framework_mib_3/1, 
 	 snmp_mpd_mib_3/1,
@@ -202,17 +202,17 @@
 	 snmp_view_based_acm_mib_3/1, 
 	 snmp_user_based_sm_mib_3/1,
 
-	 %% all_tcs - test_v3 - v3_security
+	 %% main - test_v3 - v3_security
 	 v3_crypto_basic/1, 
 	 v3_md5_auth/1, 
 	 v3_sha_auth/1,
 	 v3_des_priv/1, 
 
-	 %% all_tcs - test_multi_threaded
+	 %% main - test_multi_threaded
 	 multi_threaded/1, 
 	 mt_trap/1, 
 	 
-	 %% all_tcs - mib_storage - mib_storage_ets
+	 %% main - mib_storage - mib_storage_ets
 	 mse_simple/1, 
 	 mse_v1_processing/1, 
 	 mse_big/1, 
@@ -234,7 +234,7 @@
 	 mse_me_of/1,
 	 mse_mib_of/1, 
 
-	 %% all_tcs - mib_storage - mib_storage_dets
+	 %% main - mib_storage - mib_storage_dets
 	 msd_simple/1, 
 	 msd_v1_processing/1, 
 	 msd_big/1, 
@@ -256,7 +256,7 @@
 	 msd_me_of/1,
 	 msd_mib_of/1, 
 
-	 %% all_tcs - mib_storage - mib_storage_mnesia
+	 %% main - mib_storage - mib_storage_mnesia
 	 msm_simple/1, 
 	 msm_v1_processing/1, 
 	 msm_big/1, 
@@ -278,25 +278,25 @@
 	 msm_me_of/1,
 	 msm_mib_of/1, 
 
-	 %% all_tcs - mib_storage - mse_size_check
+	 %% main - mib_storage - mse_size_check
 	 mse_size_check/1, 
 
-	 %% all_tcs - mib_storage - msd_size_check
+	 %% main - mib_storage - msd_size_check
 	 msd_size_check/1, 
 
-	 %% all_tcs - mib_storage - msm_size_check
+	 %% main - mib_storage - msm_size_check
 	 msm_size_check/1, 
 
-	 %% all_tcs - mib_storage - varm_mib_storage_dets
+	 %% main - mib_storage - varm_mib_storage_dets
 	 msd_varm_mib_start/1, 
 
-	 %% all_tcs - mib_storage - varm_mib_storage_mnesia
+	 %% main - mib_storage - varm_mib_storage_mnesia
 	 msm_varm_mib_start/1, 
 
-	 %% all_tcs - tickets1 - otp4394
+	 %% main - tickets1 - otp4394
 	 otp_4394/1, 
 
-	 %% all_tcs - tickets1 - otp7157
+	 %% main - tickets1 - otp7157
 	 otp_7157/1, 
 
 	 %% tickets2
@@ -421,6 +421,7 @@
 	 do_info/1
 	]).
 
+
 -define(application, snmp).
 
 -include_lib("kernel/include/file.hrl").
@@ -501,15 +502,20 @@
 				   Type, Ent, Gen, Spec, ExpVBs, To)).
 
 
+%%% -------------------------------------------------------------------------
+%%% -------------------------------------------------------------------------
+
 all() -> 
     %% Reqs  = [mnesia, distribution, {local_slave_nodes, 2}, {time, 360}],
-    Conf1 = [{group, all_tcs}],
+    Conf1 = [{group, main}],
     Conf2 = [{group, tickets2}],
+    %% Conf2 = [], 
     Conf1 ++ Conf2.
 
 groups() -> 
     [
-     {all_tcs,                       [], cases()},
+     %% The main "cluster" of test cases
+     {main,                          [], main_cases()},
      {mib_storage,                   [], mib_storage_cases()}, 
      {mib_storage_ets,               [], mib_storage_ets_cases()},
      {mib_storage_dets,              [], mib_storage_dets_cases()},
@@ -519,6 +525,9 @@ groups() ->
      {mib_storage_size_check_mnesia, [], msm_size_check_cases()},
      {mib_storage_varm_dets,         [], varm_mib_storage_dets_cases()},
      {mib_storage_varm_mnesia,       [], varm_mib_storage_mnesia_cases()},
+     {mib_data,                      [], mib_data_cases()}, 
+     {mib_data_tttn,                 [], mib_data_tttn_cases()}, 
+     {mib_data_tttn2,                [], mib_data_tttn2_cases()}, 
      {misc,                          [], misc_cases()}, 
      {test_v1,                       [], v1_cases()},
      {test_v2,                       [], v2_cases()},
@@ -538,9 +547,13 @@ groups() ->
      {reported_bugs_2,               [], reported_bugs2_cases()}, 
      {reported_bugs_3,               [], reported_bugs3_cases()}, 
      {tickets1,                      [], tickets1_cases()}, 
-     {tickets2,                      [], tickets2_cases()}, 
      {otp4394,                       [], [otp_4394]},
-     {otp7157,                       [], [otp_7157]}
+     {otp7157,                       [], [otp_7157]}, 
+
+     %% This grouop of cases are not set up in a common way. 
+     %% Insteasd, each test case is responsible for setting
+     %% its own environment, i.e. starting agents, managers, ...
+     {tickets2,                      [], tickets2_cases()}
     ].
 
 
@@ -571,7 +584,7 @@ end_per_suite(Config) when is_list(Config) ->
     Config.
 
 
-init_per_group(all_tcs = GroupName, Config) ->
+init_per_group(main = GroupName, Config) ->
     init_all(snmp_test_lib:init_group_top_dir(GroupName, Config));
 init_per_group(otp7157 = GroupName, Config) -> 
     otp_7157_init(snmp_test_lib:init_group_top_dir(GroupName, Config));
@@ -620,10 +633,14 @@ init_per_group(mib_storage_dets = GroupName, Config) ->
     init_mib_storage_dets(snmp_test_lib:init_group_top_dir(GroupName, Config));
 init_per_group(mib_storage_ets = GroupName, Config) -> 
     init_mib_storage_ets(snmp_test_lib:init_group_top_dir(GroupName, Config));
+init_per_group(mib_data_tttn = GroupName, Config) -> 
+    init_mib_data_tttn(snmp_test_lib:init_group_top_dir(GroupName, Config));
+init_per_group(mib_data_tttn2 = GroupName, Config) -> 
+    init_mib_data_tttn2(snmp_test_lib:init_group_top_dir(GroupName, Config));
 init_per_group(GroupName, Config) ->
     snmp_test_lib:init_group_top_dir(GroupName, Config).
 
-end_per_group(all_tcs, Config) ->
+end_per_group(main, Config) ->
     finish_all(Config);
 end_per_group(otp7157, Config) -> 
     otp_7157_finish(Config);
@@ -634,41 +651,45 @@ end_per_group(v2_inform, Config) ->
 end_per_group(v3_inform, Config) -> 
     finish_v3_inform(Config);
 end_per_group(multiple_reqs, Config) -> 
-	finish_mul(Config);
+    finish_mul(Config);
 end_per_group(multiple_reqs_2, Config) -> 
     finish_mul(Config);
 end_per_group(multiple_reqs_3, Config) -> 
     finish_mul(Config);
 end_per_group(test_multi_threaded, Config) -> 
-	finish_mt(Config);
+    finish_mt(Config);
 end_per_group(test_v3, Config) -> 
-	finish_v3(Config);
+    finish_v3(Config);
 end_per_group(test_v1_v2, Config) -> 
-	finish_v1_v2(Config);
+    finish_v1_v2(Config);
 end_per_group(test_v2, Config) -> 
-	finish_v2(Config);
+    finish_v2(Config);
 end_per_group(test_v1, Config) -> 
-	finish_v1(Config);
+    finish_v1(Config);
 end_per_group(misc, Config) -> 
-	finish_misc(Config);
+    finish_misc(Config);
 end_per_group(mib_storage_varm_mnesia, Config) -> 
-	finish_varm_mib_storage_mnesia(Config);
+    finish_varm_mib_storage_mnesia(Config);
 end_per_group(mib_storage_varm_dets, Config) -> 
-	finish_varm_mib_storage_dets(Config);
+    finish_varm_mib_storage_dets(Config);
 end_per_group(mib_storage_size_check_mnesia, Config) -> 
-	finish_size_check_msm(Config);
+    finish_size_check_msm(Config);
 end_per_group(mib_storage_size_check_dets, Config) -> 
-	finish_size_check_msd(Config);
+    finish_size_check_msd(Config);
 end_per_group(mib_storage_size_check_ets, Config) -> 
-	finish_size_check_mse(Config);
+    finish_size_check_mse(Config);
 end_per_group(mib_storage_mnesia, Config) -> 
-	finish_mib_storage_mnesia(Config);
+    finish_mib_storage_mnesia(Config);
 end_per_group(mib_storage_dets, Config) -> 
-	finish_mib_storage_dets(Config);
+    finish_mib_storage_dets(Config);
 end_per_group(mib_storage_ets, Config) -> 
-	finish_mib_storage_ets(Config);
+    finish_mib_storage_ets(Config);
+end_per_group(mib_data_tttn, Config) -> 
+    finish_mib_data_tttn(Config);
+end_per_group(mib_data_tttn2, Config) -> 
+    finish_mib_data_tttn2(Config);
 end_per_group(_GroupName, Config) ->
-	Config.
+    Config.
 
 
 
@@ -777,7 +798,9 @@ init_per_testcase2(Case, Config) ->
 %%     Config.
 
 
-cases() -> 
+%% This cluster of cases has that in common that the environment
+%% is set up in a common way (see below). 
+main_cases() -> 
     [
      {group, misc}, 
      {group, test_v1}, 
@@ -786,6 +809,7 @@ cases() ->
      {group, test_v3},
      {group, test_multi_threaded}, 
      {group, mib_storage},
+     {group, mib_data},
      {group, tickets1}
     ].
 
@@ -980,19 +1004,31 @@ mib_storage_mnesia_cases() ->
     ].
 
 mse_size_check_cases() -> 
-    [mse_size_check].
+    [
+     mse_size_check
+    ].
 
 msd_size_check_cases() -> 
-    [msd_size_check].
+    [
+     msd_size_check
+    ].
 
 msm_size_check_cases() -> 
-    [msm_size_check].
+    [
+     msm_size_check
+    ].
 
 varm_mib_storage_dets_cases() -> 
-    [msd_varm_mib_start].
+    [
+     msd_varm_mib_start
+    ].
 
 varm_mib_storage_mnesia_cases() -> 
-    [msm_varm_mib_start].
+    [
+     msm_varm_mib_start
+    ].
+
+
 
 init_mib_storage_ets(Config) when is_list(Config) ->
     ?LOG("init_mib_storage_ets -> entry", []),
@@ -1496,18 +1532,79 @@ mib_of(Oid, ExpectedMibName) ->
     end.
 
 
+%% -----------------------------------------------------------------------
 
-init_misc(Config) ->
-    init_v1(Config).
+mib_data_cases() ->
+    [
+     {group, mib_data_tttn}, 
+     {group, mib_data_tttn2} 
+    ].
 
-finish_misc(Config) ->
-    finish_v1(Config).
+mib_data_tttn_cases() ->
+    v1_cases().
+
+mib_data_tttn2_cases() ->
+    mib_data_tttn_cases().
+
+init_mib_data_tttn(Config) when is_list(Config) ->
+    ?LOG("init_mib_data_tttn -> entry", []),
+    MibStorage = {mib_server, [{data_module, snmpa_mib_data_tttn}, 
+			       {verbosity,   trace}]},
+    init_md(Config, [MibStorage]).
+
+init_mib_data_tttn2(Config) when is_list(Config) ->
+    ?LOG("init_mib_data_tttn2 -> entry", []),
+    MibStorage = {mib_server, [{data_module, snmpa_mib_data_tttn2}, 
+			       {verbosity,   trace}]},
+    init_md(Config, [MibStorage]).
+
+init_md(Config, Opts) when is_list(Config) ->
+    ?LOG("init_md -> entry with"
+	 "~n   Config: ~p"
+	 "~n   Opts:   ~p", [Config, Opts]),
+    ?line SaNode       = ?GCONF(snmp_sa, Config),
+    ?line create_tables(SaNode),
+    ?line AgentConfDir = ?GCONF(agent_conf_dir, Config),
+    ?line MgrDir       = ?GCONF(mgr_dir, Config),
+    ?line Ip           = ?GCONF(ip, Config),
+    ?line config([v1], MgrDir, AgentConfDir, 
+		 tuple_to_list(Ip), tuple_to_list(Ip)),
+    MasterAgentVerbosity = {agent_verbosity, trace},
+    SymStoreVerbosity    = {symbolic_store,  [{verbosity, trace}]},
+    Opts1 = [MasterAgentVerbosity, SymStoreVerbosity | Opts],
+    [{vsn, v1} | start_v1_agent(Config, Opts1)].
+
+
+finish_mib_data_tttn(Config) when is_list(Config) ->
+    ?LOG("finish_mib_data_tttn -> entry", []),
+    finish_md(Config).
+
+finish_mib_data_tttn2(Config) when is_list(Config) ->
+    ?LOG("finish_mib_data_tttn2 -> entry", []),
+    finish_md(Config).
+
+finish_md(Config) when is_list(Config) ->
+    delete_tables(),
+    C1 = stop_agent(Config),
+    delete_files(C1),
+    C2 = lists:keydelete(vsn, 1, C1),
+    lists:keydelete(agent_opts, 1, C2).
+
+
+
+%% -----------------------------------------------------------------------
 
 misc_cases() -> 
     [
      app_info, 
      info_test
     ].
+
+init_misc(Config) ->
+    init_v1(Config).
+
+finish_misc(Config) ->
+    finish_v1(Config).
 
 app_info(suite) -> [];
 app_info(Config) when is_list(Config) ->
@@ -1540,8 +1637,81 @@ app_dir(App) ->
     end.
 
 
+%%-----------------------------------------------------------------
+%% Slogan: info test
+%%-----------------------------------------------------------------
 
-%v1_cases() -> [loop_mib];
+info_test(suite) -> [];
+info_test(Config) when is_list(Config) ->
+    ?P(info_test), 
+    init_case(Config),
+
+    ?line load_master("OLD-SNMPEA-MIB"),
+    ?line init_old(),
+    try_test(do_info, [node()]),
+    ?line unload_master("OLD-SNMPEA-MIB").
+
+do_info(MaNode) ->
+    ?line Info = rpc:call(MaNode, snmpa, info, []),
+    ?DBG("info_test1 -> Info: ~n~p", [Info]),
+    Keys = [vsns, 
+	    stats_counters, 
+	    {agent, [process_memory, db_memory]}, 
+	    {net_if, [process_memory, port_info, reqs]}, 
+	    {note_store, [process_memory, db_memory]}, 
+	    {symbolic_store, [process_memory, db_memory]}, 
+	    {local_db, [process_memory, db_memory]}, 
+	    {mib_server, [process_memory, 
+			  loaded_mibs, 
+			  subagents, 
+			  tree_size_bytes, 
+			  db_memory]}], 
+    verify_info(Info, Keys),
+    ok.
+
+verify_info([], []) ->
+    ok;
+verify_info([], Keys) ->
+    ?FAIL({remaining_info_keys, Keys});
+verify_info(Info0, [Key|Keys]) ->
+    Info = verify_info1(Info0, Key),
+    verify_info(Info, Keys).
+
+verify_info1(Info0, Key) when is_atom(Key) ->
+    case lists:keydelete(Key, 1, Info0) of
+	Info0 ->
+	    ?FAIL({missing_info, Key});
+	Info ->
+	    Info
+    end;
+verify_info1(Info0, {Key, SubKeys}) when is_atom(Key) andalso is_list(SubKeys) ->
+    case lists:keysearch(Key, 1, Info0) of
+	false ->
+	    ?FAIL({missing_info, Key});	    
+	{value, {Key, SubInfo}} ->
+	    case verify_subinfo(SubInfo, SubKeys) of
+		ok ->
+		    lists:keydelete(Key, 1, Info0);
+		{error, MissingSubKeyOrKeys} ->
+		    ?FAIL({missing_info, {Key, MissingSubKeyOrKeys}})
+	    end
+    end.
+
+verify_subinfo(_, []) ->
+    ok;
+verify_subinfo([], Keys) ->
+    {error, Keys};
+verify_subinfo(Info0, [Key|Keys]) ->
+    case lists:keydelete(Key, 1, Info0) of
+	Info0 ->
+	    {error, Key};
+	Info ->
+	    verify_subinfo(Info, Keys)
+    end.
+
+
+%% -------------------------------------------------------------------------
+
 v1_cases() -> 
     [
      simple, 
@@ -2570,24 +2740,32 @@ sa_error_3(X) ->
 
 next_across_sa(suite) -> [];
 next_across_sa(Config) when is_list(Config) ->
+    ?DBG("next_across_sa -> entry", []),
     ?P(next_across_sa), 
     {SaNode, _MgrNode, MibDir} = init_case(Config),
     MA = whereis(snmp_master_agent),
 
+    ?DBG("next_across_sa -> start subagent...", []),
     ?P1("start subagent (1)..."),
     ?line {ok, SA} = start_subagent(SaNode, ?sa, "SA-MIB"),
 
     ?P1("Loading another subagent mib (Klas1)..."),
+    ?DBG("next_across_sa -> loading another subagent mib (Klas1)...", []),
     ?line ok = snmpa:load_mibs(SA, [MibDir ++ "Klas1"]),
 
     ?P1("register subagent..."), 
+    ?DBG("next_across_sa -> register subagent...", []),
     rpc:call(SaNode, snmp, register_subagent, [MA, ?klas1, SA]),
 
     ?P1("Load test subagent..."),
+    ?DBG("next_across_sa -> try load_test_sa", []),
     try_test(load_test_sa),
+    ?DBG("next_across_sa -> done load_test_sa", []),
     
     ?P1("Testing next across subagent (endOfMibView from SA)..."),
+    ?DBG("next_across_sa -> try next_across_sa", []),
     try_test(next_across_sa_test),
+    ?DBG("next_across_sa -> done next_across_sa", []),
 
     ?P1("Unloading mib (Klas1)"),
     snmpa:unload_mibs(SA, [MibDir ++ "Klas1"]),
@@ -5244,7 +5422,7 @@ snmp_user_based_sm_mib_3(Config) when is_list(Config) ->
     %% Try to use the new user
     ?line load_master("Test2"),
     try_test(v3_sync, [[{usm_use_user, []}]],
-	[{sec_level, authPriv}, {user, "newUser"}]),
+	     [{sec_level, authPriv}, {user, "newUser"}]),
     ?line unload_master("Test2"),
 
     ShaKey1 = snmp:passwd2localized_key(sha, "new sha password", "agentEngine"),
@@ -5252,7 +5430,7 @@ snmp_user_based_sm_mib_3(Config) when is_list(Config) ->
 
     %% Change the new user's keys - 1
     try_test(v3_sync, [[{usm_key_change1, [ShaKey1, DesKey1]}]],
-	[{sec_level, authPriv}, {user, "newUser"}]),
+	     [{sec_level, authPriv}, {user, "newUser"}]),
 
     %% Try to use the new keys
     MgrDir = ?config(mgr_dir, Config),
@@ -5275,20 +5453,20 @@ snmp_user_based_sm_mib_3(Config) when is_list(Config) ->
     ?line rewrite_usm_mgr(MgrDir, ShaKey2, DesKey2),
     ?line load_master("Test2"),
     ?line try_test(v3_sync, [[{usm_use_user, []}]],
-	      [{sec_level, authPriv}, {user, "newUser"}]),
+		   [{sec_level, authPriv}, {user, "newUser"}]),
     ?line unload_master("Test2"),
     reset_usm_mgr(MgrDir),
 
     %% Change the new user's keys - 3
     ?line try_test(v3_sync,
-	      [[{usm_key_change3, [ShaKey2, DesKey2, ShaKey1, DesKey1]}]],
-	      [{sec_level, authPriv}, {user, "privDES"}]),
+		   [[{usm_key_change3, [ShaKey2, DesKey2, ShaKey1, DesKey1]}]],
+		   [{sec_level, authPriv}, {user, "privDES"}]),
 
     %% Try to use the new keys
     ?line rewrite_usm_mgr(MgrDir, ShaKey1, DesKey1),
     ?line load_master("Test2"),
     try_test(v3_sync, [[{usm_use_user, []}]],
-	[{sec_level, authPriv}, {user, "newUser"}]),
+	     [{sec_level, authPriv}, {user, "newUser"}]),
     ?line unload_master("Test2"),
     reset_usm_mgr(MgrDir),
 
@@ -6903,97 +7081,9 @@ nkill(Pid, Reason, N) when N > 0 ->
 	    ok
     end.
 
-    
-%%-----------------------------------------------------------------
-%% Slogan: info test
-%%-----------------------------------------------------------------
 
-info_test(suite) -> [];
-info_test(Config) when is_list(Config) ->
-    ?P(info_test), 
-    init_case(Config),
+%% -------------------------------------------------------------------------    
 
-    ?line load_master("OLD-SNMPEA-MIB"),
-    ?line init_old(),
-    try_test(do_info, [node()]),
-    ?line unload_master("OLD-SNMPEA-MIB").
-    
-do_info(MaNode) ->
-    ?line Info = rpc:call(MaNode, snmpa, info, []),
-    ?DBG("info_test1 -> Info: ~n~p", [Info]),
-    Keys = [vsns, 
-	    stats_counters, 
-	    {agent, [process_memory, db_memory]}, 
-	    {net_if, [process_memory, port_info, reqs]}, 
-	    {note_store, [process_memory, db_memory]}, 
-	    {symbolic_store, [process_memory, db_memory]}, 
-	    {local_db, [process_memory, db_memory]}, 
-	    {mib_server, [process_memory, 
-			  loaded_mibs, 
-			  subagents, 
-			  tree_size_bytes, 
-			  db_memory]}], 
-    verify_info(Info, Keys),
-    OldInfo = snmpa:old_info_format(Info),
-    ?DBG("info_test1 -> OldInfo: ~n~p", [OldInfo]),
-    verify_old_info(OldInfo),
-    ok.
-
-verify_info([], []) ->
-    ok;
-verify_info([], Keys) ->
-    ?FAIL({remaining_info_keys, Keys});
-verify_info(Info0, [Key|Keys]) ->
-    Info = verify_info1(Info0, Key),
-    verify_info(Info, Keys).
-
-verify_info1(Info0, Key) when is_atom(Key) ->
-    case lists:keydelete(Key, 1, Info0) of
-	Info0 ->
-	    ?FAIL({missing_info, Key});
-	Info ->
-	    Info
-    end;
-verify_info1(Info0, {Key, SubKeys}) when is_atom(Key) andalso is_list(SubKeys) ->
-    case lists:keysearch(Key, 1, Info0) of
-	false ->
-	    ?FAIL({missing_info, Key});	    
-	{value, {Key, SubInfo}} ->
-	    case verify_subinfo(SubInfo, SubKeys) of
-		ok ->
-		    lists:keydelete(Key, 1, Info0);
-		{error, MissingSubKeyOrKeys} ->
-		    ?FAIL({missing_info, {Key, MissingSubKeyOrKeys}})
-	    end
-    end.
-
-verify_subinfo(_, []) ->
-    ok;
-verify_subinfo([], Keys) ->
-    {error, Keys};
-verify_subinfo(Info0, [Key|Keys]) ->
-    case lists:keydelete(Key, 1, Info0) of
-	Info0 ->
-	    {error, Key};
-	Info ->
-	    verify_subinfo(Info, Keys)
-    end.
-
-verify_old_info(Info) ->
-    Keys = [vsns, subagents, loaded_mibs, 
-	    tree_size_bytes, process_memory, db_memory],
-    verify_old_info(Keys, Info).
-
-verify_old_info([], _) ->
-    ok;
-verify_old_info([Key|Keys], Info) ->
-    case lists:keymember(Key, 1, Info) of
-	true ->
-	    verify_old_info(Keys, Info);
-	false ->
-	    ?FAIL({missing_old_info, Key})
-    end.
-   
 %% Index String - string used in index
 is(S) -> [length(S) | S].
 
