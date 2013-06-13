@@ -810,29 +810,31 @@ next(#mib_data{tree = T} = D, Oid, MibView) ->
 %%          {table, TableOid, TableRestOid, MibEntry}
 %%-----------------------------------------------------------------
 next_node(_D, undefined_node, _Oid, _RevOidSoFar, _MibView) ->
-    ?vtrace("next_node(undefined_node) -> entry", []),
+    ?vdebug("next_node(undefined_node) -> entry when not found", []),
     false;
 
 next_node(_D, {tree, Tree, {table_entry, _Id}}, [Int | _Oid],
           _RevOidSoFar, _MibView)
   when Int + 1 > element(1, Tree) ->
-    ?vtrace("next_node(tree,table_entry) -> entry when not found whith"
-        "~n   Int:        ~p"
-        "~n   size(Tree): ~p", [Int, element(1, Tree)]),
+    ?vdebug("next_node(tree,table_entry) -> entry when not found"
+	    "~n   Int:          ~p"
+	    "~n   size of Tree: ~p", [Int, element(1, Tree)]),
     false;
 next_node(D, {tree, _Tree, {table_entry, _MibName}},
           Oid, RevOidSoFar, MibView) ->
     ?vtrace("next_node(tree,table_entry) -> entry when"
-        "~n   size(Tree):  ~p"
-        "~n   Oid:         ~p"
-        "~n   RevOidSoFar: ~p"
-        "~n   MibView:     ~p", [element(1, _Tree), Oid, RevOidSoFar, MibView]),
+	    "~n   size of Tree: ~p"
+	    "~n   Oid:          ~p"
+	    "~n   RevOidSoFar:  ~p"
+	    "~n   MibView:      ~p", 
+	    [element(1, _Tree), Oid, RevOidSoFar, MibView]),
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmpa_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
         true ->
             ?vdebug("next_node(tree,table_entry) -> not in mib view",[]),
             false;
         _ ->
+            ?vtrace("next_node(tree,table_entry) -> in mib view",[]),
             #mib_data{module = Mod, node_db = Db} = D,
             case Mod:read(Db, OidSoFar) of
                 false ->
@@ -840,56 +842,66 @@ next_node(D, {tree, _Tree, {table_entry, _MibName}},
                         "~n   OidSoFar: ~p", [OidSoFar]),
                     false;
                 {value, #node_info{me = ME}} ->
-                    ?vtrace("next_node(tree,table_entry) -> found: ~n   ~p",
-                        [ME]),
+                    ?vtrace("next_node(tree,table_entry) -> found node info: "
+			    "~n   OidSoFar: ~p"
+			    "~n   ME:       ~p", [OidSoFar, ME]),
                     {table, OidSoFar, Oid, ME}
             end
     end;
 
-next_node(D, {tree, Tree, _Info}, [Int | RestOfOid], RevOidSoFar, MibView)
+next_node(D, {tree, Tree, _Info} = T, [Int | RestOfOid], RevOidSoFar, MibView)
   when (Int < element(1, Tree)) andalso (Int >= 0) ->
     ?vtrace("next_node(tree) -> entry when"
-        "~n   size(Tree):  ~p"
-        "~n   Int:         ~p"
-        "~n   RestOfOid:   ~p"
-        "~n   RevOidSoFar: ~p"
-        "~n   MibView:     ~p",
+	    "~n   size of Tree: ~p"
+	    "~n   Int:          ~p"
+	    "~n   RestOfOid:    ~p"
+	    "~n   RevOidSoFar:  ~p"
+	    "~n   MibView:      ~p",
         [element(1, Tree), Int, RestOfOid, RevOidSoFar, MibView]),
     case next_node(D, sparse_element(Int, Tree),
                    RestOfOid, [Int | RevOidSoFar], MibView) of
         false ->
-            IntPlus = sparse_next_defined(Int, Tree),
-            find_next(D, {tree, Tree, _Info}, IntPlus, RevOidSoFar, MibView);
+	    ?vtrace("next_node(tree) -> false - find next", []), 
+            NextInt = sparse_next_defined(Int, Tree),
+	    ?vtrace("next_node(tree) -> Next int: ~p", [NextInt]), 
+            find_next(D, T, NextInt, RevOidSoFar, MibView);
         Else ->
+	    ?vtrace("next_node(tree) -> result: "
+		    "~n   ~p", [Else]), 
             Else
     end;
 %% no solution
-next_node(D, {tree, Tree, _Info}, [], RevOidSoFar, MibView) ->
+next_node(D, {tree, Tree, _Info} = T, [], RevOidSoFar, MibView) ->
     ?vtrace("next_node(tree,[]) -> entry when"
-        "~n   size(Tree):  ~p"
-        "~n   RevOidSoFar: ~p"
-        "~n   MibView:     ~p",
-        [element(1, Tree), RevOidSoFar, MibView]),
-    find_next(D, {tree, Tree, _Info}, 0, RevOidSoFar, MibView);
+	    "~n   size(Tree):  ~p"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p",
+	    [element(1, Tree), RevOidSoFar, MibView]),
+    find_next(D, T, 0, RevOidSoFar, MibView);
 next_node(_D, {tree, _Tree, _Info}, _RestOfOid, _RevOidSoFar, _MibView) ->
-    ?vtrace("next_node(tree) -> entry when"
-        "~n   size(Tree):  ~p", [element(1, _Tree)]),
+    ?vtrace("next_node(tree) -> entry when not found"
+	    "~n   size(Tree):  ~p", [element(1, _Tree)]),
     false;
 
 next_node(D, {node, subagent}, _Oid, RevOidSoFar, MibView) ->
     ?vtrace("next_node(node,subagent) -> entry when"
-        "~n   Oid:         ~p"
-        "~n   RevOidSoFar: ~p"
-        "~n   MibView:     ~p",
-        [_Oid, RevOidSoFar, MibView]),
+	    "~n   Oid:         ~p"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p",
+	    [_Oid, RevOidSoFar, MibView]),
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmpa_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
         true ->
+	    ?vdebug("next_node(node,subagent) -> not in mib-view", []),
             false;
         _ ->
+	    ?vtrace("next_node(node,subagent) -> in mib-view", []),
             #mib_data{subagents = SAs} = D,
             case lists:keysearch(OidSoFar, 2, SAs) of
                 {value, {SubAgentPid, OidSoFar}} ->
+		    ?vdebug("find_next(node,subagent) -> found info: "
+			    "~n   OidSoFar:    ~p"
+			    "~n   SubAgentPid: ~p", [OidSoFar, SubAgentPid]),
                     {subagent, SubAgentPid, OidSoFar};
                 _ ->
                     ?vinfo("next_node -> could not find subagent with"
@@ -900,29 +912,35 @@ next_node(D, {node, subagent}, _Oid, RevOidSoFar, MibView) ->
     end;
 
 next_node(D, {node, {variable, _MibName}}, [], RevOidSoFar, MibView) ->
-    ?vtrace("next_node(node,variable,[]) -> entry when"
-        "~n   RevOidSoFar: ~p"
-        "~n   MibView:     ~p",
-        [RevOidSoFar, MibView]),
+    ?vtrace("next_node(node,variable) -> entry when"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p",
+	    [RevOidSoFar, MibView]),
     OidSoFar = lists:reverse([0 | RevOidSoFar]),
     case snmpa_acm:validate_mib_view(OidSoFar, MibView) of
         true ->
+	    ?vtrace("next_node(node,variable) -> mib-view validated", []),
             #mib_data{module = Mod, node_db = Db} = D,
             case Mod:read(Db, lists:reverse(RevOidSoFar)) of
                 false ->
                     ?vinfo("next_node -> could not find variable with"
-                        "~n   RevOidSoFar: ~p", [RevOidSoFar]),
+			   "~n   RevOidSoFar: ~p", [RevOidSoFar]),
                     false;
                 {value, #node_info{me = ME}} ->
+		    ?vdebug("next_node(node,variable) -> found node info: "
+			    "~n   OidSoFar: ~p"
+			    "~n   ME:       ~p", [OidSoFar, ME]),
                     {variable, ME, OidSoFar}
             end;
         _ ->
+	    ?vdebug("next_node(node,variable) -> mib-view not validated", []),
             false
     end;
 
 next_node(_D, {node, {variable, _MibName}}, _Oid, _RevOidSoFar, _MibView) ->
-    ?vtrace("next_node(node,variable) -> entry", []),
+    ?vtrace("next_node(node,variable) -> entry when not found", []),
     false.
+
 
 %%-----------------------------------------------------------------
 %% This function is used to find the first leaf from where we
@@ -936,62 +954,97 @@ next_node(_D, {node, {variable, _MibName}}, _Oid, _RevOidSoFar, _MibView) ->
 %%-----------------------------------------------------------------
 find_next(D, {tree, Tree, internal}, Idx, RevOidSoFar, MibView)
   when Idx < element(1, Tree) ->
-    case find_next(
-            D, sparse_element(Idx, Tree), 0, [Idx| RevOidSoFar], MibView) of
+    ?vtrace("find_next(tree,internal) -> entry when"
+	    "~n   size of Tree: ~p"
+	    "~n   Idx:          ~p"
+	    "~n   RevOidSoFar:  ~p"
+	    "~n   MibView:      ~p", 
+	    [element(1, Tree), Idx, RevOidSoFar, MibView]),
+    case find_next(D, 
+		   sparse_element(Idx, Tree), 
+		   0, [Idx | RevOidSoFar], MibView) of
         false ->
+	    ?vtrace("find_next(tree,internal) -> false - try next idx", []), 
             NextIdx = sparse_next_defined(Idx, Tree),
             find_next(D, {tree, Tree, internal}, NextIdx, RevOidSoFar, MibView);
         Other ->
             Other
     end;
 find_next(_D, {tree, _Tree, internal}, _Idx, _RevOidSoFar, _MibView) ->
+    ?vdebug("find_next(tree,internal) -> entry when not found", []),
     false;
 find_next(_D, undefined_node, _Idx, _RevOidSoFar, _MibView) ->
+    ?vdebug("find_next(undefined_node) -> entry when not found", []),
     false;
 find_next(D, {tree, Tree, {table, _MibName}}, Idx, RevOidSoFar, MibView) ->
+    ?vtrace("find_next(tree,table) -> entry", []),
     find_next(D, {tree, Tree, internal}, Idx, RevOidSoFar, MibView);
 find_next(D, {tree, _Tree, {table_entry, _MibName}}, _Index,
           RevOidSoFar, MibView) ->
+    ?vtrace("find_next(tree,table_entry) -> entry when"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p", [RevOidSoFar, MibView]),
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmpa_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
         true ->
+	    ?vdebug("find_next(tree,table_entry) -> not in mib-view", []),
             false;
         _ ->
+	    ?vtrace("find_next(tree,table_entry) -> in mib-view", []),
             #mib_data{module = Mod, node_db = Db} = D,
             case Mod:read(Db, OidSoFar) of
                 false ->
                     ?vinfo("find_next -> could not find table_entry ME with"
-                        "~n   OidSoFar: ~p", [OidSoFar]),
+			   "~n   OidSoFar: ~p", [OidSoFar]),
                     false;
                 {value, #node_info{me = ME}} ->
+		    ?vdebug("find_next(tree,table_entry) -> found node info: "
+			    "~n   OidSoFar: ~p"
+			    "~n   ME:       ~p", [OidSoFar, ME]),
                     {table, OidSoFar, [], ME}
             end
     end;
 find_next(D, {node, {variable, _MibName}}, _Idx, RevOidSoFar, MibView) ->
+    ?vtrace("find_next(node,variable) -> entry when"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p", [RevOidSoFar, MibView]),
     OidSoFar = lists:reverse([0 | RevOidSoFar]),
     case snmpa_acm:validate_mib_view(OidSoFar, MibView) of
         true ->
+	    ?vtrace("find_next(node,variable) -> mib-view validated", []),
             #mib_data{module = Mod, node_db = Db} = D,
             case Mod:read(Db, lists:reverse(RevOidSoFar)) of
                 false ->
                     ?vinfo("find_next -> could not find variable with"
-                        "~n   RevOidSoFar: ~p", [RevOidSoFar]),
+			   "~n   RevOidSoFar: ~p", [RevOidSoFar]),
                     false;
                 {value, #node_info{me = ME}} ->
+		    ?vdebug("find_next(node,variable) -> found node info: "
+			    "~n   OidSoFar: ~p"
+			    "~n   ME:       ~p", [OidSoFar, ME]),
                     {variable, ME, OidSoFar}
             end;
         _ ->
+	    ?vdebug("find_next(node,variable) -> mib-view not validated", []),
             false
     end;
 find_next(D, {node, subagent}, _Idx, RevOidSoFar, MibView) ->
+    ?vtrace("find_next(node,subagent) -> entry when"
+	    "~n   RevOidSoFar: ~p"
+	    "~n   MibView:     ~p", [RevOidSoFar, MibView]),
     OidSoFar = lists:reverse(RevOidSoFar),
     case snmpa_acm:is_definitely_not_in_mib_view(OidSoFar, MibView) of
         true ->
+	    ?vdebug("find_next(node,subagent) -> not in mib-view", []),
             false;
         _ ->
+	    ?vtrace("find_next(node,subagent) -> in mib-view", []),
             #mib_data{subagents = SAs} = D,
             case lists:keysearch(OidSoFar, 2, SAs) of
                 {value, {SubAgentPid, OidSoFar}} ->
+		    ?vdebug("find_next(node,subagent) -> found info: "
+			    "~n   OidSoFar:    ~p"
+			    "~n   SubAgentPid: ~p", [OidSoFar, SubAgentPid]),
                     {subagent, SubAgentPid, OidSoFar};
                 false ->
                     ?vinfo("find_node -> could not find subagent with"
@@ -1000,6 +1053,7 @@ find_next(D, {node, subagent}, _Idx, RevOidSoFar, MibView) ->
                     false
             end
     end.
+
 
 %%%======================================================================
 %%% 3. Tree building functions
@@ -1555,7 +1609,7 @@ sparse_next_defined(Idx, SparseTuple) ->
     sparse_next_defined(Idx, SparseTuple, Skips).
 
 sparse_next_defined(Idx, SparseTuple, _)
-        when element(1, SparseTuple) =< (Idx + 1) ->
+  when element(1, SparseTuple) =< (Idx + 1) ->
     %% end of tuple - handle in caller
     Idx + 1;
 sparse_next_defined(Idx, SparseTuple, []) ->
@@ -1566,10 +1620,10 @@ sparse_next_defined(Idx, SparseTuple, []) ->
             Idx + 1
     end;
 sparse_next_defined(Idx, SparseTuple, [{{_From, To}, _} | TSkips])
-        when To =< Idx ->
+  when To =< Idx ->
     sparse_next_defined(Idx, SparseTuple, TSkips);
 sparse_next_defined(Idx, _SparseTuple, [{{From, To}, _} | _])
-        when From =< Idx -> % Idx < To
+  when From =< Idx -> % Idx < To
     To;
 sparse_next_defined(Idx, SparseTuple, Skips) ->
     case sparse_element(Idx + 1, SparseTuple) of
