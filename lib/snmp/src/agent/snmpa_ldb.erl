@@ -84,19 +84,6 @@
 %%% Local DB behaviour definition
 %%%-------------------------------------------------------------------
 
--ifndef(no_old_style_behaviour_def).
-behaviour_info(callbacks) ->
-    [{open,          1}, 
-     {handle_close,  1},
-     {handle_insert, 2},
-     {handle_delete, 2},
-     {handle_lookup, 2},
-     {handle_match,  2}];
-behaviour_info(_) ->
-    undefined.
-
--else.
-
 -callback open(Options :: open_options()) ->
     {ok, StorageState :: term()} | {error, Reason :: term()}.
 
@@ -116,7 +103,6 @@ behaviour_info(_) ->
 -callback handle_match(StorageState :: term(), Pattern :: tuple()) ->
     {ok, Match} | {ok, Match, NewStorageState :: term()}.
 
--endif.
 
 
 %%%-------------------------------------------------------------------
@@ -147,7 +133,7 @@ variable_get(Name, Variable) ->
     Reply = 
 	try
 	    begin
-		Module:lookup(State, Variable)
+		Module:handle_lookup(State, Variable)
 	    end
 	catch
 	    T:E ->
@@ -162,7 +148,7 @@ variable_set(Name, Variable, Value) ->
     Reply = 
 	try
 	    begin
-		Module:insert(State, Variable, Value)
+		Module:handle_insert(State, Variable, Value)
 	    end
 	catch
 	    T:E ->
@@ -181,7 +167,7 @@ notify_clients(_DBAlias, Event, [{Client, Module}|Clients]) ->
     notify_clients(DBAlias, Event, Clients);
 %% </backward compat>
 notify_clients(DBAlias, Event, [{Client, Module, Extra}|Clients]) ->
-    (catch Module:snmp_ldb_event(Client, DBAlias, Event, Extra)),
+    (catch Module:snmpa_ldb_event(Client, DBAlias, Event, Extra)),
     notify_clients(DBAlias, Event, Clients).
     
 
