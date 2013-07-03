@@ -48,12 +48,22 @@
 	 terminate/2,
          code_change/3]).
 
--export_type([void/0, open_option/0, open_options/0]).
+-export_type([
+	      name/0, 
+	      module/0, 
+              priority/0, 
+	      open_option/0, 
+	      open_options/0, 
+	      open_option_key/0, 
+	      open_option_value/0 
+	     ]).
 
 -include("snmpa_internal.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
 
+%% -define(VMODULE, "LDB").
+-include("snmp_verbosity.hrl").
 
 -define(MK_TABLE_NAME(Pre, Post), 
 	list_to_atom(atom_to_list(Pre) ++ "_" ++ atom_to_list(Post))).
@@ -75,9 +85,14 @@
 -endif.
 
 
--type void() :: term().
--type open_options() :: [open_option()].
--type open_option() :: {atom(), term()}.
+-type name()              :: atom(). % Name of the local-db
+-type module()            :: atom(). % Module implementing this behaviour
+
+-type priority()          :: proc_lib:priority_level().
+-type open_options()      :: [open_option()].
+-type open_option()       :: {open_option_key(), open_option_value()}.
+-type open_option_key()   :: atom().
+-type open_option_value() :: term().
 
 
 %%%-------------------------------------------------------------------
@@ -85,23 +100,25 @@
 %%%-------------------------------------------------------------------
 
 -callback open(Options :: open_options()) ->
-    {ok, StorageState :: term()} | {error, Reason :: term()}.
+    {ok, State :: term()} | {error, Reason :: term()}.
 
--callback handle_close(StorageState :: term()) ->
-    void().
+-callback handle_close(State :: term()) ->
+    snmp:void().
 
--callback handle_insert(StorageState :: term(), Data :: tuple()) ->
-    ok | {ok, NewStorageState :: term()}.
+-callback handle_insert(State :: term(), 
+			Key   :: term(), 
+			Val   :: term()) ->
+    {ok, NewState :: term()} | {error, Reason :: term()}.
 
--callback handle_delete(StorageState :: term(), Key :: term()) ->
-    ok | {ok, NewStorageState :: term()}.
+-callback handle_delete(State :: term(), Key :: term()) ->
+    {ok, NewState :: term()} | {error, Reason :: term()}.
 
--callback handle_lookup(StorageState :: term(), Key :: term()) ->
-    undefined | {undefined, NewStorageState :: term()} | 
-    {ok, Value} | {ok, Value, NewStorageState :: term()}.
+-callback handle_lookup(State :: term(), Key :: term()) ->
+    {value, Value :: term()} | false.
 
--callback handle_match(StorageState :: term(), Pattern :: tuple()) ->
-    {ok, Match} | {ok, Match, NewStorageState :: term()}.
+-callback handle_match(State   :: term(), 
+		       Pattern :: ets:match_pattern()) ->
+    [Match :: [term()]].
 
 
 
@@ -109,6 +126,11 @@
 %%% API
 %%%-------------------------------------------------------------------
 
+-spec start_link(Name   :: name(), 
+		 Module :: module(), 
+		 Opts   :: list()) ->
+    {ok, Pid :: pid()} | {error, Reason :: term()}.
+    
 start_link(Name, Module, Opts) -> 
     ?d("start_link -> entry with"
        "~n   Name:   ~p"
@@ -117,183 +139,233 @@ start_link(Name, Module, Opts) ->
     ?GS_START_LINK(Name, Module, Opts).
 
 
+-spec stop(Name :: name()) ->
+    snmp:void(). 
+
 stop(Name) ->
     call(Name, stop).
 
 
-subscribe_notifications(Name, Module) ->
-    call(Name, {subscribe_notifications, Module}).
+-spec verbosity(Name :: name(), NewVerbosity :: snmp_verbosity:verbosity()) ->
+    OldVerbosity :: snmp_verbosity:verbosity().
 
 verbosity(Name, V) ->
     call(Name, {verbosity, V}).
 
 
-variable_get(Name, Variable) ->
-    {Module, State} = lock(Name, read),
-    Reply = 
-	try
-	    begin
-		Module:handle_lookup(State, Variable)
-	    end
-	catch
-	    T:E ->
-		{error, {lookup_failed, T, E}}
-	end,
-    unlock(Name),
-    Reply.
+-spec variable_get(Name     :: name(), 
+		   Variable :: term()) ->
+    {value, Value :: term()} | undefined.
 
+variable_get(Name, Variable) ->
+    call(Name, {variable_get, Variable}).
+
+-spec variable_set(Name     :: name(), 
+		   Variable :: term(), 
+		   Value    :: term()) ->
+    boolean().
 
 variable_set(Name, Variable, Value) ->
-    {Alias, NClients, Module, State} = lock(Name, write),
-    Reply = 
-	try
-	    begin
-		Module:handle_insert(State, Variable, Value)
-	    end
-	catch
-	    T:E ->
-		{error, {insert_failed, T, E}}
-	end,
-    unlock(Name),
-    notify_clients(Alias, insert, NClients), 
-    Reply.
+    call(Name, {variable_set, Variable, Value}).
+
+-spec variable_inc(Name     :: name(), 
+		   Variable :: term()) ->
+    snmp:void().
+
+variable_inc(Name, Variable) ->
+    variable_inc(Name, Variable, 1).
+
+-spec variable_inc(Name     :: name(), 
+		   Variable :: term(), 
+		   N        :: pos_integer()) ->
+    snmp:void().
+
+variable_inc(Name, Variable, N) 
+  when is_integer(N) andalso (N > 0) andalso (N < 4294967296) ->
+    cast(Name, {variable_inc, Variable, N}).
+
+-spec variable_delete(Name     :: name(), 
+		      Variable :: term()) ->
+    snmp:void().
+
+variable_delete(Name, Variable) ->
+    call(Name, {variable_delete, Variable}).
 
 
-notify_clients(_, _, []) ->
-    ok;
-%% <backward compat>
-notify_clients(_DBAlias, Event, [{Client, Module}|Clients]) ->
-    (catch Module:notify(Client, Event)),
-    notify_clients(DBAlias, Event, Clients);
-%% </backward compat>
-notify_clients(DBAlias, Event, [{Client, Module, Extra}|Clients]) ->
-    (catch Module:snmpa_ldb_event(Client, DBAlias, Event, Extra)),
-    notify_clients(DBAlias, Event, Clients).
-    
+-spec table_create(Name  :: name(), 
+		   Table :: term()) ->
+    boolean().
+
+table_create(Name, Table) ->
+    call(Name, {table_create, Table}).
+
+-spec table_exists(Name  :: name(), 
+		   Table :: term()) ->
+    boolean().
+
+table_exists(Name, Table) ->
+    call(Name, {table_exists, Table}).
+
+-spec table_delete(Name  :: name(), 
+		   Table :: term()) ->
+    snmp:void().
+
+table_delete(Name, Table) ->
+    call(Name, {table_delete, Table}).
 
 
-%%%-------------------------------------------------------------------
-%%% Callback functions from gen_server
-%%%-------------------------------------------------------------------
+-spec table_get(Name  :: name(), 
+		Table :: term()) ->
+    [{Index :: snmp:oid(), Row :: tuple()}].
 
-%%--------------------------------------------------------------------
-%% Func: init/1
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
-%%--------------------------------------------------------------------
-init([Name, Module, Opts]) ->
-    case (catch do_init(Name, Module, Opts)) of
-        {ok, State} ->
-            ?vdebug("started",[]),
-            {ok, State};
-        {error, Reason} ->
-            config_err("failed starting ~w: ~n~p", [Name, Reason]),
-            {stop, {error, Reason}};
-        Error ->
-            config_err("failed starting ~w: ~n~p", [Name, Error]),
-            {stop, {error, Error}}
+table_get(Name, Table) ->
+    table_get(Name, Table, [], []).
+
+table_get(Name, Table, Idx, Acc) ->
+    case table_next(Name, Table, Idx) of
+        endOfTable ->
+            lists:reverse(Acc);
+        NextIdx ->
+            case table_get_row(Name, Table, NextIdx) of
+                undefined ->
+                    {error, {failed_get_row, NextIdx, lists:reverse(Acc)}};
+                Row ->
+                    table_get(Name, Table, NextIdx, [{NextIdx, Row}|Acc])
+            end
     end.
 
+-spec table_next(Name    :: name(), 
+		 Table   :: term(), 
+		 RestOid :: snmp:oid()) ->
+    Row :: tuple() | endOfTable.
 
-do_init(Name, Module, Opts) ->
-    process_flag(priority, get_prio(Opts)),
-    process_flag(trap_exit, true),
-    put(sname, sname(Name)),
-    put(verbosity, get_verbosity(Opts)),
-    ?vlog("starting",[]),
-    case Module:open(Opts) of
-	{ok, StorageState} ->
-	    {ok, #state{storage_module = Module, 
-			storage_state  = StorageState}};
-	{error, _} = Error ->
-	    {stop, Error}
-    end.
+table_next(Name, Table, RestOid) ->
+    call(Name, {table_next, Table, RestOid}).
 
 
-%%-----------------------------------------------------------------
-%% Interface functions.
-%%-----------------------------------------------------------------
+-spec table_delete_row(Name     :: name(), 
+		       Table    :: term(), 
+		       RowIndex :: snmp:oid()) ->
+    boolean().
+
+table_delete_row(Name, Table, RowIndex) ->
+    call(Name, {table_delete_row, Table, RowIndex});
+
+-spec table_get_row(Name     :: name(), 
+		    Table    :: term(), 
+		    RowIndex :: snmp:oid(), 
+		    FOI      :: non_neg_integer()) ->
+    undefined | Row :: tuple().
+
+table_get_row(Name, Table, RowIndex, _FOI) ->
+    call(Name, {table_get_row, Table, RowIndex}).
+
+-spec table_create_row(Name     :: name(), 
+		       Table    :: term(), 
+		       RowIndex :: snmp:oid(), 
+		       Row      :: tuple()) ->
+    boolean().
+
+table_create_row(Name, Table, RowIndex, Row) ->
+    call(Name, {table_create_row, Table, RowIndex, Row}).
+
+-spec table_create_row(Name     :: name(), 
+		       Table    :: term(), 
+		       RowIndex :: snmp:oid(), 
+		       Status   :: row_status(), 
+		       Cols     :: [{Col :: non_neg_integer(), 
+				     Val :: term()}]) ->
+    boolean().
+
+table_create_row(Name, Table, RowIndex, Status, Cols) ->
+    Row = table_construct_row(Name, Table, RowIndex, Status, Cols),
+    table_create_row(Name, Table, RowIndex, Row).
+
+
+-spec table_get_element(Name     :: name(), 
+			Table    :: term(), 
+			RowIndex :: snmp:oid(), 
+			Col      :: non_neg_integer()) ->
+    undefined | {value, Value :: term()}. 
+
+table_get_element(Name, Table, RowIndex, Col) ->
+    call(Name, {table_get_element, Table, RowIndex, Col}).
+
+-spec table_get_elements(Name     :: name(), 
+			 Table    :: term(), 
+			 RowIndex :: snmp:oid(), 
+			 Cols     :: [non_neg_integer()], 
+			 FOI      :: non_neg_integer()) ->
+    undefined | [{Col :: non_neg_integer(), Val :: term()}].
+
+table_get_elements(Name, Table, RowIndex, Cols, _FOI) ->
+    get_elements(Cols, table_get_row(Name, Table, RowIndex)).
+
+get_elements(_Cols, undefined) -> 
+    undefined;
+get_elements([Col | Cols], Row) when is_tuple(Row) andalso (size(Row) >= Col) ->
+    [element(Col, Row) | get_elements(Cols, Row)];
+get_elements([], _Row) -> 
+    [].
+
+
+-spec table_set_element(Name     :: name(), 
+			Table    :: term(), 
+			RowIndex :: snmp:oid(), 
+			Col      :: non_neg_integer(), 
+			Value    :: term()) ->
+    boolean().
+
+table_set_element(Name, Table, RowIndex, Col, Value) ->
+    table_set_elements(Name, Table, RowIndex, [{Col, Value}]).
+
+-spec table_set_elements(Name     :: name(), 
+			 Table    :: term(), 
+			 RowIndex :: snmp:oid(), 
+			 Cols     :: [{Col :: non_neg_integer(), 
+				       Val :: term()}]) ->
+    boolean().
+
+table_set_elements(Name, Table, RowIndex, Cols) ->
+    call(Name, {table_set_elements, Table, RowIndex, Cols}).
+
+
+-spec table_max_col(Name  :: name(), 
+		    Table :: term(), 
+		    Col   :: pos_integer()) ->
+    Max :: non_neg_integer(). 
+
+table_max_col(Name, Table, Col) ->
+    call(Name, {table_max_col, Table, Col}).
+
+
+-spec match(Name    :: name(), 
+	    Table   :: term(), 
+	    Pattern :: ets:match_pattern()) ->
+    [Match :: [term()]].
+
+match(Name, Table, Pattern) ->
+    call(Name, {match, Table, Pattern}). 
+
 
 %%-----------------------------------------------------------------
 %% Functions for debugging.
 %%-----------------------------------------------------------------
 
-print()      -> call(print).
-print(Table) -> call({print, Table, volatile}).
+%% Returns the entire database in raw form
+%% Intended for debugging
+which_db(Name, ) ->
+    call(Name, which_cb).
 
-variable_get(Storage, Variable) ->
-    call({variable_get, Storage, Variable}).
+%% Returns the table as a list of rows
+which_table(Name, Table) ->
+    call(Name, {which_table, Table}).
 
-variable_set(Storage, Variable, Val) ->
-    call({variable_set, Storage, Name, Val}).
+which_tables(Name) ->
+    call(Name, which_tables).
 
-variable_inc(Storage, Variable, N) ->
-    cast({variable_inc, Storage, Variable, N}).
-
-variable_delete(Storage, Variable) ->
-    call({variable_delete, Storage, Variable}).
-
-
-table_create(Storage, Table) ->
-    call({table_create, Storage, Table}).
-
-table_exists(Storage, Table) ->
-    call({table_exists, Storage, Table}).
-
-table_delete(Storage, Table) ->
-    call({table_delete, Storage, Table}).
-
-table_create_row(Storage, Table, RowIndex, Row) ->
-    call({table_create_row, Storage, Table, RowIndex, Row}).
-
-table_create_row(Storage, Table, RowIndex, Status, Cols) ->
-    Row = table_construct_row(Table, RowIndex, Status, Cols),
-    table_create_row(Storage, Table, RowIndex, Row).
-
-table_delete_row(Storage, Table, RowIndex) ->
-    call({table_delete_row, Storage, Table, RowIndex}).
-
-table_get_row(Storage, Table, RowIndex) ->
-    call({table_get_row, Storage, Table, RowIndex}).
-
-table_get_element(Storage, Table, RowIndex, Col) ->
-    call({table_get_element, Storage, Table, RowIndex, Col}).
-
-table_set_elements(Storage, Table, RowIndex, Cols) ->
-    call({table_set_elements, Storage, Table, RowIndex, Cols}).
-
-
-table_next(Storage, Table, RestOid) ->
-    call({table_next, Storage, Table, RestOid}).
-
-table_max_col(Storage, Table, Col) ->
-    call({table_max_col, Storage, Table, Col}).
-
-
-match({Name, Db}, Pattern) ->
-    call({match, Name, Db, Pattern});    
-match(Name, Pattern) ->
-    call({match, Name, volatile, Pattern}).
-
-
-table_get(Table) ->
-    table_get(Table, [], []).
-
-table_get(Table, Idx, Acc) ->
-    case table_next(Table, Idx) of
-	endOfTable ->
-            lists:reverse(Acc);
-	NextIdx ->
-	    case table_get_row(Table, NextIdx) of
-		undefined ->
-		    {error, {failed_get_row, NextIdx, lists:reverse(Acc)}};
-		Row ->
-		    NewAcc = [{NextIdx, Row}|Acc],
-		    table_get(Table, NextIdx, NewAcc)
-	    end
-    end.
+which_variables(Name) ->
+    call(Name, which_variables).
 
 
 %%------------------------------------------------------------------
@@ -314,7 +386,7 @@ table_construct_row(Table, RowIndex, Status, Cols) ->
                 defvals         = Defs, 
 		status_col      = StatusCol,
                 first_own_index = FirstOwnIndex, 
-		not_accessible  = NoAccs} = snmp_generic:table_info(Name),
+		not_accessible  = NoAccs} = snmp_generic:table_info(Table),
     Keys    = snmp_generic:split_index_to_keys(Indexes, RowIndex),
     OwnKeys = snmp_generic:get_own_indexes(FirstOwnIndex, Keys),
     Row     = OwnKeys ++ snmp_generic:table_create_rest(length(OwnKeys) + 1,
@@ -324,34 +396,32 @@ table_construct_row(Table, RowIndex, Status, Cols) ->
     list_to_tuple(L).
 
 
-table_get_elements(Storage, Table, RowIndex, Cols, _FirstOwnIndex) ->
-    get_elements(Cols, table_get_row(Storage, Table, RowIndex)).
-
-get_elements(_Cols, undefined) -> 
-    undefined;
-get_elements([Col | Cols], Row) when is_tuple(Row) and (size(Row) >= Col) ->
-    [element(Col, Row) | get_elements(Cols, Row)];
-get_elements([], _Row) -> 
-    [];
-get_elements(Cols, Row) ->
-    erlang:error({bad_arguments, Cols, Row}).
-
-
 %%----------------------------------------------------------------------
 %% This should/could be a generic function, but since Mnesia implements
-%% its own and this version still is local_db dependent, it's not generic yet.
+%% its own and this version still is local_db dependent, it's not 
+%% generic yet.
 %%----------------------------------------------------------------------
+
+-spec table_set_status(Name              :: name(), 
+		       Table             :: term(), 
+		       RowIndex          :: snmp:oid(), 
+		       RowStatus         :: row_status(), 
+		       StatusCol         :: non_neg_integer(), 
+		       Cols              :: [non_neg_integer()], 
+		       ChangedStatusFunc :: function(), 
+		       ConsFunc          :: function()) ->
+    {noError, 0} | {Error :: atom(), Col :: non_neg_integer()}.
 
 %% *** createAndGo ***
 
-table_set_status(Storage, Table, RowIndex, 
+table_set_status(Name, Table, RowIndex, 
 		 ?'RowStatus_createAndGo', 
 		 StatusCol, Cols, ChangedStatusFunc, _ConsFunc) ->
-    case table_create_row(Storage, Table, RowIndex, 
+    case table_create_row(Name, Table, RowIndex, 
 			  ?'RowStatus_active', Cols) of
         true -> 
 	    snmp_generic:try_apply(ChangedStatusFunc,
-				   [Storage, Table, 
+				   [Name, Table, 
 				    ?'RowStatus_createAndGo',
 				    RowIndex, Cols]);
         _ -> 
@@ -362,17 +432,17 @@ table_set_status(Storage, Table, RowIndex,
 %% *** createAndWait *** 
 %% Set status to notReady, and try to make row consistent.
 
-table_set_status(Storage, Table, RowIndex, 
+table_set_status(Name, Table, RowIndex, 
 		 ?'RowStatus_createAndWait', 
 		 StatusCol, Cols, ChangedStatusFunc, ConsFunc) ->
-    case table_create_row(Storage, Table, RowIndex, 
+    case table_create_row(Name, Table, RowIndex, 
 			  ?'RowStatus_notReady', Cols) of
         true -> 
             case snmp_generic:try_apply(ConsFunc, 
-					[Storage, Table, RowIndex, Cols]) of
+					[Name, Table, RowIndex, Cols]) of
                 {noError, 0} ->
                     snmp_generic:try_apply(ChangedStatusFunc, 
-                                           [Storage, Table, 
+                                           [Name, Table, 
 					    ?'RowStatus_createAndWait',
                                             RowIndex, Cols]);
                 Error -> 
@@ -381,46 +451,104 @@ table_set_status(Storage, Table, RowIndex,
         _ -> 
 	    {commitFailed, StatusCol}
     end;
-    
+
 
 %% *** destroy ***
 
-table_set_status(Storage, Table, RowIndex, 
+table_set_status(Name, Table, RowIndex, 
 		 ?'RowStatus_destroy', _StatusCol, Cols,
                  ChangedStatusFunc, _ConsFunc) ->
     case snmp_generic:try_apply(ChangedStatusFunc,
-                                [Storage, Table, 
+                                [Name, Table, 
 				 ?'RowStatus_destroy',
                                  RowIndex, Cols]) of
         {noError, 0} ->
-            table_delete_row(Storage, Table, RowIndex),
+            table_delete_row(Name, Table, RowIndex),
             {noError, 0};
         Error -> Error
     end;
 
 %% *** Otherwise (active or notInService) ***
-table_set_status(Storage, Table, RowIndex, Val, _StatusCol, Cols,
+table_set_status(Name, Table, RowIndex, Val, _StatusCol, Cols,
                  ChangedStatusFunc, ConsFunc) ->
-    snmp_generic:table_set_cols(Storage, Table, RowIndex, Cols, ConsFunc),
-    snmp_generic:try_apply(ChangedStatusFunc, [Storage, Table, Val, RowIndex, Cols]).
+    snmp_generic:table_set_cols(Name, Table, RowIndex, Cols, ConsFunc),
+    snmp_generic:try_apply(ChangedStatusFunc, 
+			   [Name, Table, Val, RowIndex, Cols]).
 
 
+%%%-------------------------------------------------------------------
+%%% Callback functions from gen_server
+%%%-------------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%% Func: init/1
+%% Returns: {ok, State}          |
+%%          {ok, State, Timeout} |
+%%          ignore               |
+%%          {stop, Reason}
+%%--------------------------------------------------------------------
+init([Name, Module, Opts]) ->
+    case (catch do_init(Name, Module, Opts)) of
+        {ok, State} ->
+            ?vdebug("started",[]),
+            {ok, State};
+        {error, Reason} ->
+            config_err("failed starting ~w: ~n~p", [Name, Reason]),
+            {stop, {error, Reason}}
+    end.
+
+
+do_init(Name, Module, Opts) ->
+    process_flag(priority,  get_prio(Opts)),
+    process_flag(trap_exit, true),
+    put(sname,     sname(Name)),
+    put(verbosity, get_verbosity(Opts)),
+    ?vlog("starting",[]),
+    open(#state{db_module = Module}, cleanup_opts(Opts)). 
+
+
+%% Remove any options used here, 
+%% so that the db-module only gets its own options
+cleanup_opts([]) ->
+    [];
+cleanup_opts([{priority, _} | Opts]) ->
+    cleanup_opts(Opts);
+cleanup_opts([{verbosity, _} | Opts]) ->
+    cleanup_opts(Opts);
+cleanup_opts([Opt | Opts]) ->
+    [Opt | cleanup_opts(Opts)].
+
+    
 %%-----------------------------------------------------------------
 %% Implements the variable functions.
 %%-----------------------------------------------------------------
-handle_call({variable_get, Name}, _From, State) -> 
-    ?vlog("variable get: ~p [~p]", [Name]),
-    {Reply, NewState} = insert(State, Name), 
+handle_call({verbosity,Verbosity}, _From, State) ->
+    ?vlog("verbosity: ~p -> ~p",[get(verbosity), Verbosity]),
+    OldVerbosity = 
+	case get(verbosity) of
+	    undefined ->
+		silence;
+	    V ->
+		V
+	end, 
+    put(verbosity, ?vvalidate(Verbosity)),
+    {reply, OldVerbosity, State};
+
+handle_call({variable_get, Variable}, _From, State) -> 
+    ?vlog("variable get: ~p", [Variable]),
+    Reply = lookup(State, Variable), 
     {reply, Reply, NewState};
 
-handle_call({variable_set, Name, Db, Val}, _From, State) -> 
-    ?vlog("variable ~p set [~p]: "
-	  "~n   Val:  ~p",[Name, Db, Val]),
-    {reply, insert(Db, Name, Val, State), State};
+handle_call({variable_set, Variable, Val}, _From, State) -> 
+    ?vlog("variable ~p set: "
+	  "~n   Val:  ~p", [Variable, Val]),
+    {Reply, NewState} = insert(State, Variable, Val), 
+    {reply, Reply, NewState};
 
-handle_call({variable_delete, Name, Db}, _From, State) -> 
-    ?vlog("variable delete: ~p [~p]",[Name, Db]),
-    {reply, delete(Db, Name, State), State};
+handle_call({variable_delete, Variable}, _From, State) -> 
+    ?vlog("variable delete: ~p", [Variable]),
+    {Reply, NewState} = delete(State, Variable), 
+    {reply, Reply, NewState};
 
 
 %%-----------------------------------------------------------------
@@ -550,7 +678,7 @@ handle_call({table_next, Name, Db, Indexes}, _From, State) ->
 handle_call({table_max_col, Name, Db, Col}, _From, State) ->
     ?vlog("table ~p max col [~p]: "
 	  "~n   Col: ~p",[Name, Db, Col]),
-    Res = table_max_col(Db, Name, Col, 0, first, State),
+    Res = table_max_col(Name, Table, Col, 0, first, State),
     ?vdebug("table max col result: "
 	    "~n   ~p",[Res]),
     {reply, Res, State};
@@ -658,13 +786,9 @@ handle_cast({variable_inc, Name, Db, N}, State) ->
 	    {value, Val} -> Val;
 	    _ -> 0 
 	end,
-    insert(Db, Name, M+N rem 4294967296, State),
-    {noreply, State};
-    
-handle_cast({verbosity,Verbosity}, State) ->
-    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
-    put(verbosity,?vvalidate(Verbosity)),
-    {noreply, State};
+    NewVal = (M+N) rem 4294967296, 
+    {_Reply, NewState} = insert(State, Variable, NewVal), 
+    {noreply, NewState};
     
 handle_cast(Msg, State) ->
     warning_msg("received unknown message: ~n~p", [Msg]),
@@ -726,96 +850,124 @@ code_change(_Vsn, State, _Extra) ->
 
 
 %%------------------------------------------------------------------
-%% Storage backend interface/wrapper functions
+%% DB backend interface/wrapper functions
 %%------------------------------------------------------------------
 
-open(#state{storage_module = Module} = State, Opts) ->
-    try Module:open(Opts) of
-	{ok, StorageState} ->
-	    {ok, State#state{storage_state = StorageState}}
+open(#state{db_module = DBModule} = State, Opts) ->
+    try DBModule:open(Opts) of
+	{ok, DBState} ->
+	    {ok, State#state{db_state = DBState}}
     catch
-	T:Reason ->
+	T:E ->
 	    error_msg("Open failed (~w): "
-		      "~n   ~p", [T, Reason]),
-	    {error, {T, Reason}}
+		      "~n   ~p", [T, E]),
+	    {error, {T, E}}
     end.
 
 
-close(#state{storage_module = Module, 
-	     storage_state  = StorageState} = State) ->
-    try Module:handle_close(StorageState) of
+close(#state{db_module = Module, 
+	     db_state  = DBState} = State) ->
+    try DBModule:handle_close(DBState) of
 	ok ->
-	    State#state{storage_state = undefined}
+	    State#state{db_state = undefined}
     catch
-	T:Reason ->
+	T:E ->
 	    error_msg("Close failed (~w): "
-		      "~n   ~p", [T, Reason]),
+		      "~n   ~p", [T, E]),
 	    State
     end.
 
 
-insert(#state{storage_module = Module, 
-	      storage_state  = StorageState} = State, Key, Value) ->
-    Data = {Key, Value}, 
-    try Module:handle_insert(StorageState, Data) of
-	{ok, NewStorageState} ->
-	    {true, State#state{storage_state = NewStorageState}};	    
-	ok ->
-	    {true, State}
-    catch
-	T:Reason ->
+insert(#state{db_module = DBModule, 
+	      db_state  = DBState} = State, Key, Value) ->
+    try DBModule:handle_insert(DBState, Key, Value) of
+	{ok, NewDBState} ->
+	    {true, State#state{db_state = NewDBState}};
+	{error, Reason} ->
 	    error_msg("Insert failed (~w) for ~p with value ~p: "
 		      "~n   ~p", [T, Key, Value, Reason]),
+	    {false, State}
+    catch
+	T:E ->
+	    error_msg("Insert failed (~w) for ~p with value ~p: "
+		      "~n   ~p", [T, Key, Value, E]),
 	    {false, State}	    
     end.
 
 
-delete(#state{storage_module = Module, 
-	      storage_state  = StorageState} = State, Key) ->
-    try Module:handle_delete(StorageState, Key) of
-	{ok, NewStorageState} ->
-	    {true, State#state{storage_state = NewStorageState}};	    
-	ok ->
-	    {true, State}
+delete(#state{db_module = DBModule, 
+	      db_state  = DBState} = State, Key) ->
+    try DBModule:handle_delete(DBState, Key) of
+	{ok, NewDBState} ->
+	    {true, State#state{db_state = NewDBState}};
+	{error, Reason} ->
+	    error_msg("Delete failed for ~p: "
+		      "~n   ~p", [Key, Reason]),
+	    {false, State}
     catch
-	T:Reason ->
+	T:E ->
 	    error_msg("Delete failed (~w) for ~p: "
-		      "~n   ~p", [T, Key, Reason]),
+		      "~n   ~p", [T, Key, E]),
 	    {false, State}
     end.
 
 
-lookup(#state{storage_module = Module, 
-	      storage_state  = StorageState} = State, Key) ->
-    try Module:handle_lookup(StorageState, Key) of
-	undefined ->
-	    {undefined, State};
-	{undefined, NewStorageState} ->
-	    {undefined, State#state{storage_state = NewStorageState}};
-	{ok, Value} ->
-	    {{value, Value}, State};
-	{ok, Value, NewStorageState} ->
-	    {{value, Value}, State#state{storage_state = NewStorageState}}
+lookup(#state{db_module = DBModule, 
+	      db_state  = DBState} = _State, Key) ->
+    try DBModule:handle_lookup(DBState, Key) of
+	false ->
+	    false;
+	{value, _} = Value ->
+	    Value
     catch
-	T:Reason ->
+	T:E ->
 	    error_msg("Lookup failed (~w) for ~p: "
-		      "~n   ~p", [T, Key, Reason]),
-	    {undefined, State}
+		      "~n   ~p", [T, Key, E]),
+	    false
     end.
 
 
-match(#state{storage_module = Module, 
-	     storage_state  = StorageState} = State, Pattern) ->
-    try Module:handle_match(StorageState, Pattern) of
-	{ok, Match} ->
-	    {Match, State};
-	{ok, Match, NewStorageState} ->
-	    {Match, State#state{storage_state = NewStorageState}}
+match(#state{db_module = Module, 
+	     db_state  = DBState} = State, Pattern) ->
+    try DBModule:handle_match(DBState, Pattern) of
+	Match when is_list(Match) ->
+	    Match
     catch
-	T:Reason ->
+	T:E ->
 	    error_msg("Match failed (~w) for ~p: "
-		      "~n   ~p", [T, Pattern, Reason]),
+		      "~n   ~p", [T, Pattern, E]),
 	    []
+    end.
+
+
+
+
+
+%%-----------------------------------------------------------------
+%% Implementation of max.
+%% The value in a column could be noinit or undefined,
+%% so we must check only those with an integer.
+%%-----------------------------------------------------------------
+table_max_col(Name, Table, Col, Max, RowIndex, State) ->
+    case lookup(State, {Table, RowIndex}) of
+        {value, {Row, _Prev, Next}} when (Next =:= first) -> 
+	    Val = element(Col, Row), 
+	    if 
+		is_integer(Val) andalso (Val > Max) -> 
+		    Val;
+		true ->
+		    Max
+	    end;
+        {value, {Row, _Prev, Next}} -> 
+	    Val = element(Col, Row), 
+	    if 
+                is_integer(Val) andalso (Val > Max) -> 
+                    table_max_col(Name, Table, Col, Val, Next, State);
+                true -> 
+                    table_max_col(Name, Table, Col, Max, Next, State)
+            end;
+        undefined -> 
+	    Max
     end.
 
 

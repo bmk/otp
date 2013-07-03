@@ -30,9 +30,7 @@
 	 stop/0, 
 	 verbosity/1,
 	 variable_get/1, 
-	 variable_set/2, 
-	 /2,
-	 /1
+	 variable_set/2
 	]).
 
 %% snmpa_ldb callback functions
@@ -45,8 +43,14 @@
 	 close/1
 	]).
 
+-export_type([
+	      dir/0 
+	     ]).
+
 -define(NAME, ?MODULE).
 -define(TAB,  ?MODULE).
+
+-type dir() :: file:name_all().
 
 start_link(Opts) ->
     snmpa_ldb:start_link(?NAME, ?MODULE, [{sname, pers_ldb}|Opts]).
@@ -117,21 +121,17 @@ init(Opts) ->
 	    end
     end.
 
-insert(#state{tab = Tab, shadow_tab = ShadowTab}, Key, Value) ->
-    Data = {Key, Value}, 
+handle_insert(#state{tab = Tab, shadow_tab = ShadowTab}, Data) ->
     ets:insert(ShadowTab, Data),
     dets:insert(Tab, Data), 
-    true.
+    ok.
 
-delete(#state{tab = Tab, shadow_tab = ShadowTab}, Key) ->
+handle_delete(#state{tab = Tab, shadow_tab = ShadowTab}, Key) ->
     ets:delete(ShadowTab, Key),
     dets:delete(Tab, Key), 
-    true.
+    ok.
 
-match(#state{shadow_tab = ShadowTab}, Pattern) ->
-    ets:match(ShadowTab, {{Name,'_'}, {Pattern,'_','_'}}).
-
-lookup(#state{tab = Tab}, Key) ->
+handle_lookup(#state{tab = Tab}, Key) ->
     case ets:lookup(Tab, Key) of
 	[{_, Value}] ->
 	    {value, Value};
@@ -139,7 +139,10 @@ lookup(#state{tab = Tab}, Key) ->
 	    undefined
     end.
 
-close(#state{tab = Tab}) ->
+handle_match(#state{shadow_tab = ShadowTab}, Pattern) ->
+    ets:match(ShadowTab, {{Name,'_'}, {Pattern,'_','_'}}).
+
+handle_close(#state{tab = Tab}) ->
     ets:delete(Tb).
 
 

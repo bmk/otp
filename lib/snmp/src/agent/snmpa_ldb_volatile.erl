@@ -157,5 +157,5 @@ handle_lookup(#state{tab = Tab}, Key) ->
     end.
 
 handle_match(#state{tab = Tab}, Pattern) ->
-    {ok, ets:match(Tab, Pattern)}.
+    ets:match(Tab, Pattern).
 

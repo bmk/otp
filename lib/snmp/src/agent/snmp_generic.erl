@@ -56,19 +56,32 @@
 %%------------------------------------------------------------------
 %% Access functions to the database.
 %%------------------------------------------------------------------
-variable_get({Name, mnesia}) ->
-    snmp_generic_mnesia:variable_get(Name);
-variable_get(NameDb) ->                   % ret {value, Val} | undefined
-    snmpa_local_db:variable_get(NameDb).
-variable_set({Name, mnesia}, Val) ->
-    snmp_generic_mnesia:variable_set(Name, Val);
-variable_set(NameDb, Val) ->              % ret true
-    snmpa_local_db:variable_set(NameDb, Val).
+variable_get({Name, ModuleAlias}) ->
+    Module = alias2module(ModuleAlias), 
+    Module:variable_get(Name).
 
-variable_inc({Name, mnesia}, N) ->
-    snmp_generic_mnesia:variable_inc(Name, N);
-variable_inc(NameDb, N) ->              % ret true
-    snmpa_local_db:variable_inc(NameDb, N).
+%% variable_get({Name, mnesia}) ->
+%%     snmp_generic_mnesia:variable_get(Name);
+%% variable_get(NameDb) ->                   % ret {value, Val} | undefined
+%%     snmpa_local_db:variable_get(NameDb).
+
+variable_set({Name, ModuleAlias}, Val) ->
+    Module = alias2module(ModuleAlias), 
+    Module:variable_set(Name, Val).
+
+%% variable_set({Name, mnesia}, Val) ->
+%%     snmp_generic_mnesia:variable_set(Name, Val);
+%% variable_set(NameDb, Val) ->              % ret true
+%%     snmpa_local_db:variable_set(NameDb, Val).
+
+variable_inc({Name, ModuleAlias}, N) ->
+    Module = alias2module(ModuleAlias), 
+    Module:variable_inc(Name, N);
+
+%% variable_inc({Name, mnesia}, N) ->
+%%     snmp_generic_mnesia:variable_inc(Name, N);
+%% variable_inc(NameDb, N) ->              % ret true
+%%     snmpa_local_db:variable_inc(NameDb, N).
 
 %%-----------------------------------------------------------------
 %% Returns: {value, Val} | undefined
@@ -794,12 +807,22 @@ table_get_row({Name, mnesia}, RowIndex) ->
 table_get_row(NameDb, RowIndex) ->
     snmpa_local_db:table_get_row(NameDb, RowIndex).
 
+table_get_row({Name, ModuleAlias}, RowIndex) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_get_row(Name, RowIndex).
+
 table_get_row(NameDb, RowIndex, undefined) ->
     table_get_row(NameDb, RowIndex);
-table_get_row({Name, mnesia}, RowIndex, FOI) ->
-    snmp_generic_mnesia:table_get_row(Name, RowIndex, FOI);
-table_get_row(NameDb, RowIndex, _FOI) ->
-    snmpa_local_db:table_get_row(NameDb, RowIndex).
+%% table_get_row({Name, mnesia}, RowIndex, FOI) ->
+%%     snmp_generic_mnesia:table_get_row(Name, RowIndex, FOI);
+%% table_get_row(NameDb, RowIndex, _FOI) ->
+%%     snmpa_local_db:table_get_row(NameDb, RowIndex).
+
+table_get_row({Name, ModuleAlias}, RowIndex, FOI) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_get_row(Name, RowIndex, FOI).
+
+
 
 
 %%-----------------------------------------------------------------
@@ -818,6 +841,18 @@ get_status_col(Name, Cols) ->
 	{value, {StatusCol, Val}} -> {ok, Val};
 	_ -> false
     end.
+
+
+
+%% This function performs a simple "transation" from module alias to module
+alias2module(mnesia) ->
+    snmp_generic_mnesia;
+alias2module(volatile) ->
+    snmpa_ldb_volatile;
+alias2module(persistent) ->
+    snmpa_ldb_persistent;
+alias2module(Module) ->
+    Module.
 
 
 %%-----------------------------------------------------------------
