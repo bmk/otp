@@ -19,7 +19,7 @@
 -module(snmp_generic).
 
 %% Avoid warning for local function error/1 clashing with autoimported BIF.
--compile({no_auto_import,[error/1]}).
+-compile({no_auto_import, [error/1]}).
 -export([variable_func/2, variable_func/3, variable_get/1, variable_set/2]).
 -export([table_func/2, table_func/4, 
 	 table_set_row/5, table_set_cols/3, table_set_cols/4,
@@ -60,28 +60,14 @@ variable_get({Name, ModuleAlias}) ->
     Module = alias2module(ModuleAlias), 
     Module:variable_get(Name).
 
-%% variable_get({Name, mnesia}) ->
-%%     snmp_generic_mnesia:variable_get(Name);
-%% variable_get(NameDb) ->                   % ret {value, Val} | undefined
-%%     snmpa_local_db:variable_get(NameDb).
-
 variable_set({Name, ModuleAlias}, Val) ->
     Module = alias2module(ModuleAlias), 
     Module:variable_set(Name, Val).
-
-%% variable_set({Name, mnesia}, Val) ->
-%%     snmp_generic_mnesia:variable_set(Name, Val);
-%% variable_set(NameDb, Val) ->              % ret true
-%%     snmpa_local_db:variable_set(NameDb, Val).
 
 variable_inc({Name, ModuleAlias}, N) ->
     Module = alias2module(ModuleAlias), 
     Module:variable_inc(Name, N);
 
-%% variable_inc({Name, mnesia}, N) ->
-%%     snmp_generic_mnesia:variable_inc(Name, N);
-%% variable_inc(NameDb, N) ->              % ret true
-%%     snmpa_local_db:variable_inc(NameDb, N).
 
 %%-----------------------------------------------------------------
 %% Returns: {value, Val} | undefined
@@ -108,41 +94,35 @@ table_get_elements(NameDb, RowIndex, Cols) ->
 %%----------------------------------------------------------------------
 %% Returns: list of vals | undefined
 %%----------------------------------------------------------------------
-table_get_elements({Name, mnesia}, RowIndex, Cols, FirstOwnIndex) ->
+table_get_elements({Name, ModuleAlias}, RowIndex, Cols, FirstOwnIndex) ->
     ?vtrace("table_get_elements(mnesia) -> entry with"
 	    "~n   Name:          ~p"
+	    "~n   ModuleAlias:   ~p"
 	    "~n   RowIndex:      ~p"
 	    "~n   Cols:          ~p"
-	    "~n   FirstOwnIndex: ~p", [Name, RowIndex, Cols, FirstOwnIndex]),
-    snmp_generic_mnesia:table_get_elements(Name, RowIndex, Cols, FirstOwnIndex);
-table_get_elements(NameDb, RowIndex, Cols, FirstOwnIndex) -> 
-    ?vtrace("table_get_elements -> entry with"
-	    "~n   NameDb:        ~p"
-	    "~n   RowIndex:      ~p"
-	    "~n   Cols:          ~p"
-	    "~n   FirstOwnIndex: ~p", [NameDb, RowIndex, Cols, FirstOwnIndex]),
-    snmpa_local_db:table_get_elements(NameDb, RowIndex, Cols, FirstOwnIndex).
+	    "~n   FirstOwnIndex: ~p", 
+	    [Name, ModuleAlias, RowIndex, Cols, FirstOwnIndex]),
+    Module = alias2module(ModuleAlias), 
+    Module:table_get_elements(Name, RowIndex, Cols, FirstOwnIndex).
 
 
-%% ret true
-table_set_element({Name,mnesia}, RowIndex, Col, NewVal) -> 
-    snmp_generic_mnesia:table_set_elements(Name, RowIndex,
-					   [{Col, NewVal}]);
-table_set_element(NameDb, RowIndex, Col, NewVal) ->
-    snmpa_local_db:table_set_elements(NameDb, RowIndex, [{Col, NewVal}]).
+%% Return true
+table_set_element({Name, ModuleAlias}, RowIndex, Col, NewVal) -> 
+    Module = alias2module(ModuleAlias), 
+    Module:table_set_elements(Name, RowIndex, [{Col, NewVal}]).
 
-table_set_elements({Name, mnesia}, RowIndex, Cols) ->
-    snmp_generic_mnesia:table_set_elements(Name, RowIndex, Cols);
-table_set_elements(NameDb, RowIndex, Cols) -> % ret true
-    snmpa_local_db:table_set_elements(NameDb, RowIndex, Cols).
+table_set_elements({Name, ModuleAlias}, RowIndex, Cols) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_set_elements(Name, RowIndex, Cols).
 
-table_next({Name, mnesia}, RestOid) ->
-    snmp_generic_mnesia:table_next(Name, RestOid);
-table_next(NameDb, RestOid) ->              % ret RRestOid | endOfTable
-    snmpa_local_db:table_next(NameDb, RestOid).
-table_max_col(NameDb, Col) ->               % ret largest element in Col
-                                            % in the table NameDb.
-    snmpa_local_db:table_max_col(NameDb, Col).
+table_next({Name, ModuleAlias}, RestOid) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_next(Name, RestOid).
+
+%% Return largest element in Col in the table NameDb.
+table_max_col({Name, ModuleAlias}, Col) when (ModuleAlias =/= mnesia) -> 
+    Module = alias2module(ModuleAlias), 
+    Module:table_max_col(Name, Col).
 
 
 %%------------------------------------------------------------------
@@ -190,6 +170,7 @@ variable_func(set, Val, NameDb) ->
 variable_func(undo, _Val, _NameDb) ->
     noError.
 
+
 %%------------------------------------------------------------------
 %% Tables
 %% Assumes the RowStatus is the last column in the
@@ -204,17 +185,14 @@ variable_func(undo, _Val, _NameDb) ->
 %%------------------------------------------------------------------
 %% Each database implements its own table_func
 %%------------------------------------------------------------------
-table_func(Op, {Name, mnesia}) ->
-    snmp_generic_mnesia:table_func(Op, Name);
+table_func(Op, {Name, ModuleAlias}) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_func(Op, Name).
 
-table_func(Op, NameDb) ->
-    snmpa_local_db:table_func(Op, NameDb).
+table_func(Op, RowIndex, Cols, {Name, ModuleAlias}) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_func(Op, RowIndex, Cols, Name).
 
-table_func(Op, RowIndex, Cols, {Name, mnesia}) ->
-    snmp_generic_mnesia:table_func(Op, RowIndex, Cols, Name);
-
-table_func(Op, RowIndex, Cols, NameDb) ->
-    snmpa_local_db:table_func(Op, RowIndex, Cols, NameDb).
 
 %%----------------------------------------------------------------------
 %% DB independent.
@@ -347,7 +325,7 @@ check_all_initalized([Val | Vals], [Col | Cols], Name, RowIndex,
      check_all_initalized(Vals, Cols, Name, RowIndex, FirstCol, FOI, LastCol)];
 check_all_initalized([], [], _Name, _RowIndex, _FirstCol, _FOI, _LastCol) ->
     [].
-    
+
 
 %%------------------------------------------------------------------
 %%  Implements is_set_ok. 
@@ -379,6 +357,7 @@ table_try_row(NameDb, TryChangeStatusFunc, RowIndex, Cols) ->
 		    {inconsistentName, ColNo}
 	    end
     end.
+
 
 %%------------------------------------------------------------------
 %% table_check_status can be used by the is_set_ok
@@ -845,6 +824,7 @@ get_status_col(Name, Cols) ->
 
 
 %% This function performs a simple "transation" from module alias to module
+%% Note that if its not a module alias then it is assumed to a proper module.
 alias2module(mnesia) ->
     snmp_generic_mnesia;
 alias2module(volatile) ->

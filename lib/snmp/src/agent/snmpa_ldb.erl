@@ -278,7 +278,7 @@ table_create_row(Name, Table, RowIndex, Row) ->
     boolean().
 
 table_create_row(Name, Table, RowIndex, Status, Cols) ->
-    Row = table_construct_row(Name, Table, RowIndex, Status, Cols),
+    Row = snmp_generic_lib:table_construct_row(Table, RowIndex, Status, Cols),
     table_create_row(Name, Table, RowIndex, Row).
 
 
@@ -366,34 +366,6 @@ which_tables(Name) ->
 
 which_variables(Name) ->
     call(Name, which_variables).
-
-
-%%------------------------------------------------------------------
-%%  Constructs a row with first elements the own part of RowIndex,
-%%  and last element RowStatus. All values are stored "as is", i.e.
-%%  dynamic key values are stored without length first.
-%%  RowIndex is a list of the
-%%  first elements. RowStatus is needed, because the
-%%  provided value may not be stored, e.g. createAndGo
-%%  should be active.
-%%  Returns a tuple of values for the row. If a value
-%%  isn't specified in the Col list, then the
-%%  corresponding value will be noinit.
-%%------------------------------------------------------------------
-table_construct_row(Table, RowIndex, Status, Cols) ->
-    #table_info{nbr_of_cols     = LastCol, 
-		index_types     = Indexes,
-                defvals         = Defs, 
-		status_col      = StatusCol,
-                first_own_index = FirstOwnIndex, 
-		not_accessible  = NoAccs} = snmp_generic:table_info(Table),
-    Keys    = snmp_generic:split_index_to_keys(Indexes, RowIndex),
-    OwnKeys = snmp_generic:get_own_indexes(FirstOwnIndex, Keys),
-    Row     = OwnKeys ++ snmp_generic:table_create_rest(length(OwnKeys) + 1,
-							LastCol, StatusCol,
-							Status, Cols, NoAccs),
-    L = snmp_generic:init_defaults(Defs, Row),
-    list_to_tuple(L).
 
 
 %%----------------------------------------------------------------------
