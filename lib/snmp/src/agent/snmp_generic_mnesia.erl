@@ -154,13 +154,22 @@ table_get_row(Name, RowIndex, FOI) ->
             undefined
     end.
 
+
+table_get_element(Name, RowIndex, Col) ->
+    FOI = snmp_generic_lib:get_table_info(Name, first_own_index), 
+    case table_get_elements(Name, RowIndex, [Col], FOI) of
+    	[Val] when ((Val =/= noacc) andalso (Val =/= noinit) -> {value, Val};
+    	_ -> undefined
+    end.
+
+
 %%-----------------------------------------------------------------
 %% Returns: [Val | noacc | noinit] | undefined
 %%-----------------------------------------------------------------
-table_get_elements(Name, RowIndex, Cols, FirstOwnIndex) ->
+table_get_elements(Name, RowIndex, Cols, FOI) ->
     case mnesia:snmp_get_row(Name, RowIndex) of
 	{ok, DbRow} ->
-	    Row = make_row(DbRow, FirstOwnIndex),
+	    Row = make_row(DbRow, FOI),
 	    get_elements(Cols, Row);
 	undefined ->
 	    undefined
@@ -169,6 +178,7 @@ table_get_elements(Name, RowIndex, Cols, FirstOwnIndex) ->
 get_elements([Col | Cols], Row) ->
     [element(Col, Row) | get_elements(Cols, Row)];
 get_elements([], _Row) -> [].
+
 
 %%-----------------------------------------------------------------
 %% Args: DbRow is a mnesia row ({name, Keys, Cols, ...}).

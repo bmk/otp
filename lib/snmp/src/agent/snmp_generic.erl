@@ -47,6 +47,51 @@
 -endif.
 
 
+-callback variable_get(Name :: term()) ->
+    undefined | {value, Value :: term()}.
+
+-callback variable_set(Name :: term(), Val :: term()) ->
+    boolean().
+
+-callback variable_delete(Name :: term()) ->
+    boolean().
+
+-callback variable_inc(Name :: term(), Val :: term()) ->
+    snmp:void().
+
+-callback table_get_element(Name     :: term(), 
+			    RowIndex :: snmp:oid(), 
+			    Col      :: non_neg_integer()) ->
+    undefined | {value, Value :: term()}. 
+
+-callback table_get_elements(Name     :: term(), 
+			     RowIndex :: snmp:oid(), 
+			     Cols     :: [non_neg_integer()], 
+			     FOI      :: non_neg_integer()) ->
+    undefined | {value, Value :: term()}. 
+
+-callback table_set_element(Name     :: term(), 
+			    RowIndex :: snmp:oid(), 
+			    Col      :: non_neg_integer(), 
+			    Val      :: term()) ->
+    boolean(). 
+
+-callback table_set_elements(Name     :: term(), 
+			     RowIndex :: snmp:oid(), 
+			     Cols     :: [{Col :: non_neg_integer(), 
+					   Val :: non_neg_integer()}]) ->
+    boolean(). 
+
+-callback table_next(Name :: term(), 
+		     Oid  :: snmp:oid()) ->
+    Row :: tuple() | endOfTable.
+
+-callback table_max_col(Name :: term(), 
+			Col  :: non_neg_integer()) ->
+    Row :: tuple() | endOfTable.
+
+
+
 %%%-----------------------------------------------------------------
 %%% Generic functions for implementing software tables
 %%% and variables. 
@@ -66,7 +111,7 @@ variable_set({Name, ModuleAlias}, Val) ->
 
 variable_inc({Name, ModuleAlias}, N) ->
     Module = alias2module(ModuleAlias), 
-    Module:variable_inc(Name, N);
+    Module:variable_inc(Name, N).
 
 
 %%-----------------------------------------------------------------
@@ -74,39 +119,44 @@ variable_inc({Name, ModuleAlias}, N) ->
 %%
 %% snmpa_local_db overloads (for performance reasons? (mbj?))
 %%-----------------------------------------------------------------
-table_get_element({Name, volatile}, RowIndex, Col) ->
-    snmpa_local_db:table_get_element({Name, volatile}, RowIndex, Col);
-table_get_element({Name, persistent}, RowIndex, Col) ->
-    snmpa_local_db:table_get_element({Name, persistent}, RowIndex, Col);
-table_get_element(NameDb, RowIndex, Col) ->
-    TableInfo = table_info(NameDb),
-    case handle_table_get(NameDb,RowIndex,[Col],
-			  TableInfo#table_info.first_own_index) of
-	[{value, Val}] -> {value, Val};
-	_ -> undefined
-    end.
 
-table_get_elements(NameDb, RowIndex, Cols) ->
-    TableInfo = snmp_generic:table_info(NameDb),
-    table_get_elements(NameDb, RowIndex, Cols,
-		       TableInfo#table_info.first_own_index).
+table_get_element({Name, ModuleAlias}, RowIndex, Col) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_get_element(Name, RowIndex, Col).
+
+%% table_get_element({Name, volatile}, RowIndex, Col) ->
+%%     snmpa_local_db:table_get_element({Name, volatile}, RowIndex, Col);
+%% table_get_element({Name, persistent}, RowIndex, Col) ->
+%%     snmpa_local_db:table_get_element({Name, persistent}, RowIndex, Col);
+%% table_get_element(NameDb, RowIndex, Col) ->
+%%     TableInfo = table_info(NameDb),
+%%     case handle_table_get(NameDb,RowIndex,[Col],
+%% 			  TableInfo#table_info.first_own_index) of
+%% 	[{value, Val}] -> {value, Val};
+%% 	_ -> undefined
+%%     end.
+
 
 %%----------------------------------------------------------------------
 %% Returns: list of vals | undefined
 %%----------------------------------------------------------------------
-table_get_elements({Name, ModuleAlias}, RowIndex, Cols, FirstOwnIndex) ->
+table_get_elements(NameDb, RowIndex, Cols) ->
+    FOI = snmp_generic_lib:get_table_info(Name, first_own_index), 
+    table_get_elements(NameDb, RowIndex, Cols, FOI).
+
+table_get_elements({Name, ModuleAlias}, RowIndex, Cols, FOI) ->
     ?vtrace("table_get_elements(mnesia) -> entry with"
-	    "~n   Name:          ~p"
-	    "~n   ModuleAlias:   ~p"
-	    "~n   RowIndex:      ~p"
-	    "~n   Cols:          ~p"
-	    "~n   FirstOwnIndex: ~p", 
-	    [Name, ModuleAlias, RowIndex, Cols, FirstOwnIndex]),
+	    "~n   Name:        ~p"
+	    "~n   ModuleAlias: ~p"
+	    "~n   RowIndex:    ~p"
+	    "~n   Cols:        ~p"
+	    "~n   FOI:         ~p", 
+	    [Name, ModuleAlias, RowIndex, Cols, FOI]),
     Module = alias2module(ModuleAlias), 
-    Module:table_get_elements(Name, RowIndex, Cols, FirstOwnIndex).
+    Module:table_get_elements(Name, RowIndex, Cols, FOI).
 
 
-%% Return true
+%% Return boolean()
 table_set_element({Name, ModuleAlias}, RowIndex, Col, NewVal) -> 
     Module = alias2module(ModuleAlias), 
     Module:table_set_elements(Name, RowIndex, [{Col, NewVal}]).
@@ -781,10 +831,14 @@ table_try_make_consistent(Name, RowIndex, ?'RowStatus_notReady', TableInfo) ->
 table_try_make_consistent(_Name, _RowIndex, _StatusVal, _TableInfo) ->
     {noError, 0}.
 
-table_get_row({Name, mnesia}, RowIndex) ->
-    snmp_generic_mnesia:table_get_row(Name, RowIndex);
-table_get_row(NameDb, RowIndex) ->
-    snmpa_local_db:table_get_row(NameDb, RowIndex).
+table_get_row({Name, ModuleAlias}, RowIndex) ->
+    Module = alias2module(ModuleAlias), 
+    Module:table_get_row(Name, RowIndex).
+
+%% table_get_row({Name, mnesia}, RowIndex) ->
+%%     snmp_generic_mnesia:table_get_row(Name, RowIndex);
+%% table_get_row(NameDb, RowIndex) ->
+%%     snmpa_local_db:table_get_row(NameDb, RowIndex).
 
 table_get_row({Name, ModuleAlias}, RowIndex) ->
     Module = alias2module(ModuleAlias), 
@@ -815,12 +869,7 @@ table_get_row({Name, ModuleAlias}, RowIndex, FOI) ->
 %% modified.
 %%-----------------------------------------------------------------
 get_status_col(Name, Cols) ->
-    #table_info{status_col = StatusCol} = table_info(Name),
-    case lists:keysearch(StatusCol, 1, Cols) of
-	{value, {StatusCol, Val}} -> {ok, Val};
-	_ -> false
-    end.
-
+    snmp_generic_lib:get_status_col(Name, Cols). 
 
 
 %% This function performs a simple "transation" from module alias to module
