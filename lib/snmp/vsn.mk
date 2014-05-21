@@ -19,5 +19,5 @@
 
 APPLICATION = snmp
 SNMP_VSN    = 5.0
-PRE_VSN     = -p1
+PRE_VSN     =
 APP_VSN     = "$(APPLICATION)-$(SNMP_VSN)$(PRE_VSN)"
