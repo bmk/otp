@@ -2,7 +2,7 @@
 %% 
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2003-2013. All Rights Reserved.
+%% Copyright Ericsson AB 2003-2014. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -303,7 +303,6 @@
 	 %% tickets2
 	 otp8395/1, 
 	 otp9884/1
-
 	]).
 
 %% Internal exports
@@ -522,9 +521,13 @@ groups() ->
      {mib_storage_varm_mnesia,       [], varm_mib_storage_mnesia_cases()},
      {misc,                          [], misc_cases()}, 
      {test_v1,                       [], v1_cases()},
+     {test_v1_ipv6,                  [], v1_cases_ipv6()},
      {test_v2,                       [], v2_cases()},
+     {test_v2_ipv6,                  [], v2_cases_ipv6()},
      {test_v1_v2,                    [], v1_v2_cases()},
+     {test_v1_v2_ipv6,               [], v1_v2_cases()},
      {test_v3,                       [], v3_cases()},
+     {test_v3_ipv6,                  [], v3_cases_ipv6()},
      {test_multi_threaded,           [], mt_cases()},
      {multiple_reqs,                 [], mul_cases()},
      {multiple_reqs_2,               [], mul_cases_2()},
@@ -598,6 +601,14 @@ init_per_group(test_v2 = GroupName, Config) ->
     init_v2(snmp_test_lib:init_group_top_dir(GroupName, Config));
 init_per_group(test_v1 = GroupName, Config) -> 
     init_v1(snmp_test_lib:init_group_top_dir(GroupName, Config));
+init_per_group(test_v1_ipv6 = GroupName, Config) ->
+    init_per_group_ipv6(GroupName, Config, fun init_v1/1);
+init_per_group(test_v2_ipv6 = GroupName, Config) ->
+    init_per_group_ipv6(GroupName, Config, fun init_v2/1);
+init_per_group(test_v1_v2_ipv6 = GroupName, Config) ->
+    init_per_group_ipv6(GroupName, Config, fun init_v1_v2/1);
+init_per_group(test_v3_ipv6 = GroupName, Config) ->
+    init_per_group_ipv6(GroupName, Config, fun init_v3/1);
 init_per_group(misc = GroupName, Config) -> 
     init_misc(snmp_test_lib:init_group_top_dir(GroupName, Config));
 init_per_group(mib_storage_varm_mnesia = GroupName, Config) -> 
@@ -624,6 +635,16 @@ init_per_group(mib_storage_ets = GroupName, Config) ->
 init_per_group(GroupName, Config) ->
     snmp_test_lib:init_group_top_dir(GroupName, Config).
 
+init_per_group_ipv6(GroupName, Config, Init) ->
+    case ct:require(ipv6_hosts) of
+	ok ->
+	    Init(
+	      snmp_test_lib:init_group_top_dir(
+		GroupName, [{ipfamily, inet6}|Config]));
+	_ ->
+	    {skip, "Host does not support IPV6"}
+    end.
+
 end_per_group(all_tcs, Config) ->
     finish_all(Config);
 end_per_group(otp7157, Config) -> 
@@ -642,31 +663,39 @@ end_per_group(multiple_reqs_3, Config) ->
     finish_mul(Config);
 end_per_group(test_multi_threaded, Config) -> 
 	finish_mt(Config);
-end_per_group(test_v3, Config) -> 
+end_per_group(test_v3_ipv6, Config) ->
 	finish_v3(Config);
-end_per_group(test_v1_v2, Config) -> 
+end_per_group(test_v1_v2_ipv6, Config) ->
 	finish_v1_v2(Config);
-end_per_group(test_v2, Config) -> 
+end_per_group(test_v2_ipv6, Config) ->
 	finish_v2(Config);
-end_per_group(test_v1, Config) -> 
+end_per_group(test_v1_ipv6, Config) ->
 	finish_v1(Config);
-end_per_group(misc, Config) -> 
+end_per_group(test_v3, Config) ->
+	finish_v3(Config);
+end_per_group(test_v1_v2, Config) ->
+	finish_v1_v2(Config);
+end_per_group(test_v2, Config) ->
+	finish_v2(Config);
+end_per_group(test_v1, Config) ->
+	finish_v1(Config);
+end_per_group(misc, Config) ->
 	finish_misc(Config);
-end_per_group(mib_storage_varm_mnesia, Config) -> 
+end_per_group(mib_storage_varm_mnesia, Config) ->
 	finish_varm_mib_storage_mnesia(Config);
-end_per_group(mib_storage_varm_dets, Config) -> 
+end_per_group(mib_storage_varm_dets, Config) ->
 	finish_varm_mib_storage_dets(Config);
-end_per_group(mib_storage_size_check_mnesia, Config) -> 
+end_per_group(mib_storage_size_check_mnesia, Config) ->
 	finish_size_check_msm(Config);
-end_per_group(mib_storage_size_check_dets, Config) -> 
+end_per_group(mib_storage_size_check_dets, Config) ->
 	finish_size_check_msd(Config);
-end_per_group(mib_storage_size_check_ets, Config) -> 
+end_per_group(mib_storage_size_check_ets, Config) ->
 	finish_size_check_mse(Config);
-end_per_group(mib_storage_mnesia, Config) -> 
+end_per_group(mib_storage_mnesia, Config) ->
 	finish_mib_storage_mnesia(Config);
-end_per_group(mib_storage_dets, Config) -> 
+end_per_group(mib_storage_dets, Config) ->
 	finish_mib_storage_dets(Config);
-end_per_group(mib_storage_ets, Config) -> 
+end_per_group(mib_storage_ets, Config) ->
 	finish_mib_storage_ets(Config);
 end_per_group(_GroupName, Config) ->
 	Config.
@@ -785,6 +814,10 @@ cases() ->
      {group, test_v2},
      {group, test_v1_v2}, 
      {group, test_v3},
+     {group, test_v1_ipv6},
+     {group, test_v2_ipv6},
+     {group, test_v1_v2_ipv6},
+     {group, test_v3_ipv6},
      {group, test_multi_threaded}, 
      {group, mib_storage},
      {group, tickets1}
@@ -1637,14 +1670,40 @@ v1_cases() ->
      change_target_addr_config
     ].  
 
+v1_cases_ipv6() ->
+    [
+     simple,
+     v1_processing,
+     loop_mib,
+%%     big,
+%%     big2,
+     api,
+     subagent,
+%%     mnesia,
+%%     {group, multiple_reqs},
+     sa_register,
+%%     v1_trap, % sends v1 trap
+%%     sa_error,
+     next_across_sa,
+     undo,
+%%     {group, reported_bugs},
+     {group, standard_mibs}, % snmp_standard_mib still failing, sends v1 trap
+     sparse_table,
+%%     cnt_64, % sends v1 trap
+     opaque
+%%     change_target_addr_config % sends v1 trap
+    ].
+
 init_v1(Config) when is_list(Config) ->
     ?line SaNode = ?config(snmp_sa, Config),
     ?line create_tables(SaNode),
     ?line AgentConfDir = ?config(agent_conf_dir, Config),
     ?line MgrDir = ?config(mgr_dir, Config),
     ?line Ip = ?config(ip, Config),
-    ?line config([v1], MgrDir, AgentConfDir, 
-		 tuple_to_list(Ip), tuple_to_list(Ip)),
+    ?line IpFamily = ?config(ipfamily, Config),
+    ?line config(
+	    [v1], MgrDir, AgentConfDir,
+	    tuple_to_list(Ip), tuple_to_list(Ip), IpFamily),
     [{vsn, v1} | start_v1_agent(Config)].
 
 finish_v1(Config) when is_list(Config) ->
@@ -1681,14 +1740,43 @@ v2_cases() ->
      v2_caps
     ].
 
+v2_cases_ipv6() ->
+    [
+     simple_2,
+     v2_processing,
+%%     big_2,
+%%     big2_2,
+     loop_mib_2,
+     api_2,
+     subagent_2,
+%%     mnesia_2,
+%%     {group, multiple_reqs_2},
+     sa_register_2,
+     v2_trap,
+     {group, v2_inform},
+%%     sa_error_2,
+     next_across_sa_2,
+     undo_2,
+%%     {group, reported_bugs_2},
+     {group, standard_mibs_2},
+     v2_types,
+     implied,
+     sparse_table_2,
+     cnt_64_2,
+     opaque_2,
+     v2_caps
+    ].
+
 init_v2(Config) when is_list(Config) ->
     SaNode = ?config(snmp_sa, Config),
     create_tables(SaNode),
     AgentConfDir = ?config(agent_conf_dir, Config),
     MgrDir = ?config(mgr_dir, Config),
     Ip = ?config(ip, Config),
-    config([v2], MgrDir, AgentConfDir, 
-	   tuple_to_list(Ip), tuple_to_list(Ip)),
+    IpFamily = ?config(ipfamily, Config),
+    config(
+      [v2], MgrDir, AgentConfDir,
+      tuple_to_list(Ip), tuple_to_list(Ip), IpFamily),
     [{vsn, v2} | start_v2_agent(Config)].
 
 finish_v2(Config) when is_list(Config) ->
@@ -1707,8 +1795,9 @@ init_v1_v2(Config) when is_list(Config) ->
     AgentConfDir = ?config(agent_conf_dir, Config),
     MgrDir = ?config(mgr_dir, Config),
     Ip = ?config(ip, Config),
+    IpFamily = ?config(ipfamily, Config),
     config([v1,v2], MgrDir, AgentConfDir, 
-	   tuple_to_list(Ip), tuple_to_list(Ip)),
+	   tuple_to_list(Ip), tuple_to_list(Ip), IpFamily),
     [{vsn, bilingual} | start_bilingual_agent(Config)].
 
 finish_v1_v2(Config) when is_list(Config) ->
@@ -1746,6 +1835,34 @@ v3_cases() ->
      v2_caps_3
     ].
 
+v3_cases_ipv6() ->
+    [
+     simple_3,
+     v3_processing,
+%%     big_3,
+%%     big2_3,
+     api_3,
+     subagent_3,
+%%     mnesia_3,
+     loop_mib_3,
+%%     {group, multiple_reqs_3},
+     sa_register_3,
+     v3_trap,
+     {group, v3_inform},
+%%     sa_error_3,
+     next_across_sa_3,
+     undo_3,
+%%     {group, reported_bugs_3},
+     {group, standard_mibs_3},
+     {group, v3_security},
+     v2_types_3,
+     implied_3,
+     sparse_table_3,
+     cnt_64_3,
+     opaque_3,
+     v2_caps_3
+    ].
+
 init_v3(Config) when is_list(Config) ->
     %% Make sure crypto works, otherwise start_agent will fail
     %% and we will be stuck with a bunch of mnesia tables for
@@ -1767,9 +1884,16 @@ init_v3(Config) when is_list(Config) ->
     AgentConfDir = ?config(agent_conf_dir, Config),
     MgrDir = ?config(mgr_dir, Config),
     Ip = ?config(ip, Config),
-    ?line ok = config([v3], MgrDir, AgentConfDir, 
-		      tuple_to_list(Ip), tuple_to_list(Ip)),
-    [{vsn, v3} | start_v3_agent(Config)].
+    IpFamily = ?config(ipfamily, Config),
+    ?line ok =
+	config(
+	  [v3], MgrDir, AgentConfDir,
+	  tuple_to_list(Ip), tuple_to_list(Ip), IpFamily),
+    Opts =
+	[{master_agent_verbosity, trace},
+	 {agent_verbosity, trace},
+	 {net_if_verbosity, trace}],
+    [{vsn, v3} | start_v3_agent(Config, Opts)].
 
 finish_v3(Config) when is_list(Config) ->
     delete_tables(),
@@ -6345,7 +6469,9 @@ otp_4394_config(AgentConfDir, MgrDir, Ip0) ->
     ?line write_notify_conf(AgentConfDir),
     ok.
     
-
+ipv6_init(Config) when is_list(Config) ->
+    Opts = [],
+    [{vsn, v1} | start_v1_agent(Config, Opts)].
 
 otp_4394_finish(Config) when is_list(Config) ->
     ?DBG("finish_otp_4394 -> entry", []),
@@ -6516,9 +6642,7 @@ otp8395({init, Config}) when is_list(Config) ->
     Vsns           = [v1], 
     AgentConfDir   = ?config(agent_conf_dir, Config),
     ManagerConfDir = ?config(manager_top_dir, Config),
-    snmp_agent_test_lib:config(Vsns, 
-			       ManagerConfDir, AgentConfDir, 
-			       ManagerIP, AgentIP),
+    config(Vsns, ManagerConfDir, AgentConfDir, ManagerIP, AgentIP),
 
 
     %% --
@@ -6633,126 +6757,12 @@ otp8395(Config) when is_list(Config) ->
 otp9884({init, Config}) when is_list(Config) ->
     ?DBG("otp9884(init) -> entry with"
 	 "~n   Config: ~p", [Config]),
-
-    %% -- 
-    %% Start nodes
-    %% 
-
-    {ok, AgentNode}   = start_node(agent),
-
-    %% We don't use a manager in this test but the (common) config 
-    %% function takes an argument that is derived from this
-    {ok, ManagerNode} = start_node(manager), 
-
-    %% -- 
-    %% Mnesia init
-    %% 
-
-    AgentDbDir = ?config(agent_db_dir, Config),
-    AgentMnesiaDir = join([AgentDbDir, "mnesia"]),
-    mnesia_init(AgentNode, AgentMnesiaDir),
-
-    mnesia_create_schema(AgentNode, [AgentNode]),
-
-    mnesia_start(AgentNode),
-
-    %% --
-    %% Host & IP
-    %% 
-
-    AgentHost   = ?HOSTNAME(AgentNode),
-    ManagerHost = ?HOSTNAME(ManagerNode),
-
-    Host              = snmp_test_lib:hostname(), 
-    Ip                = ?LOCALHOST(),
-    {ok, AgentIP0}    = snmp_misc:ip(AgentHost),
-    AgentIP           = tuple_to_list(AgentIP0), 
-    {ok, ManagerIP0}  = snmp_misc:ip(ManagerHost),
-    ManagerIP         = tuple_to_list(ManagerIP0),
-
-
-    %% --
-    %% Write agent config
-    %% 
-
-    Vsns           = [v1], 
-    ManagerConfDir = ?config(manager_top_dir, Config),
-    AgentConfDir   = ?config(agent_conf_dir, Config),
-    AgentTopDir    = ?config(agent_top_dir, Config),
-    AgentBkpDir1   = join([AgentTopDir, backup1]),
-    AgentBkpDir2   = join([AgentTopDir, backup2]),
-    ok = file:make_dir(AgentBkpDir1),
-    ok = file:make_dir(AgentBkpDir2),
-    AgentBkpDirs = [AgentBkpDir1, AgentBkpDir2], 
-    snmp_agent_test_lib:config(Vsns, 
-			       ManagerConfDir, AgentConfDir, 
-			       ManagerIP, AgentIP),
-
-
-    %% --
-    %% Start the agent
-    %% 
-
-    Config2 = start_agent([{host,              Host}, 
-			   {ip,                Ip}, 
-			   {agent_node,        AgentNode}, 
-			   {agent_host,        AgentHost}, 
-			   {agent_ip,          AgentIP}, 
-			   {agent_backup_dirs, AgentBkpDirs}|Config]),
-
-    %% -- 
-    %% Create watchdog 
-    %% 
-
-    Dog = ?WD_START(?MINS(1)),
-
-    [{watchdog, Dog} | Config2];
+    init_v1_agent([{ipfamily, inet} | Config]);
 
 otp9884({fin, Config}) when is_list(Config) ->
     ?DBG("otp9884(fin) -> entry with"
 	 "~n   Config: ~p", [Config]),
-
-    AgentNode   = ?config(agent_node, Config),
-    ManagerNode = ?config(manager_node, Config),
-
-    %% -
-    %% Stop agent (this is the nice way to do it, 
-    %% so logs and files can be closed in the proper way).
-    %% 
-
-    AgentSup = ?config(agent_sup, Config),
-    ?DBG("otp9884(fin) -> stop (stand-alone) agent: ~p", [AgentSup]),
-    stop_stdalone_agent(AgentSup), 
-
-    %% - 
-    %% Stop mnesia
-    %% 
-    ?DBG("otp9884(fin) -> stop mnesia", []),
-    mnesia_stop(AgentNode),
-
-
-    %% - 
-    %% Stop the agent node
-    %% 
-
-    ?DBG("otp9884(fin) -> stop agent node", []),
-    stop_node(AgentNode),
-
-
-    %%     SubAgentNode = ?config(sub_agent_node, Config),
-    %%     stop_node(SubAgentNode),
-
-
-    %% - 
-    %% Stop the manager node
-    %% 
-
-    ?DBG("otp9884(fin) -> stop manager node", []),
-    stop_node(ManagerNode),
-
-    Dog = ?config(watchdog, Config),
-    ?WD_STOP(Dog),
-    lists:keydelete(watchdog, 1, Config);
+    fin_v1_agent(Config);
 
 otp9884(doc) ->
     "OTP-9884 - Simlutaneous backup call should not work. ";
@@ -6812,8 +6822,6 @@ otp9884_await_backup_completion(First, Second)
     end;
 otp9884_await_backup_completion(First, Second) ->
     throw({error, {bad_completion, First, Second}}).
-
-
 %%-----------------------------------------------------------------
 
 agent_log_validation(Node) ->
@@ -7110,6 +7118,9 @@ delete_files(Config) ->
 config(Vsns, MgrDir, AgentDir, MIp, AIp) ->
     snmp_agent_test_lib:config(Vsns, MgrDir, AgentDir, MIp, AIp).
 
+config(Vsns, MgrDir, AgentDir, MIp, AIp, IpFamily) ->
+    snmp_agent_test_lib:config(Vsns, MgrDir, AgentDir, MIp, AIp, IpFamily).
+
 update_usm(Vsns, Dir) ->
     snmp_agent_test_lib:update_usm(Vsns, Dir).
     
@@ -7354,3 +7365,113 @@ p(F, A) ->
 formated_timestamp() ->
     snmp_test_lib:formated_timestamp().
 
+
+init_v1_agent(Config) -> 
+    %% -- 
+    %% Start nodes
+    %% 
+
+    {ok, AgentNode}   = start_node(agent),
+
+    %% We don't use a manager in this test but the (common) config 
+    %% function takes an argument that is derived from this
+    {ok, ManagerNode} = start_node(manager), 
+
+    %% -- 
+    %% Mnesia init
+    %% 
+
+    AgentDbDir = ?config(agent_db_dir, Config),
+    AgentMnesiaDir = join([AgentDbDir, "mnesia"]),
+    mnesia_init(AgentNode, AgentMnesiaDir),
+
+    mnesia_create_schema(AgentNode, [AgentNode]),
+
+    mnesia_start(AgentNode),
+
+    %% --
+    %% Host & IP
+    %% 
+
+    AgentHost   = ?HOSTNAME(AgentNode),
+    ManagerHost = ?HOSTNAME(ManagerNode),
+
+    Host              = snmp_test_lib:hostname(), 
+    IpFamily          = ?LOCALHOST(?config(ipfamily, Config)),
+    {ok, AgentIP0}    = snmp_misc:ip(AgentHost, IpFamily),
+    AgentIP           = tuple_to_list(AgentIP0), 
+    {ok, ManagerIP0}  = snmp_misc:ip(ManagerHost, IpFamily),
+    ManagerIP         = tuple_to_list(ManagerIP0),
+
+
+    %% --
+    %% Write agent config
+    %% 
+
+    Vsns           = [v1], 
+    ManagerConfDir = ?config(manager_top_dir, Config),
+    AgentConfDir   = ?config(agent_conf_dir, Config),
+    AgentTopDir    = ?config(agent_top_dir, Config),
+    AgentBkpDir1   = join([AgentTopDir, backup1]),
+    AgentBkpDir2   = join([AgentTopDir, backup2]),
+    ok = file:make_dir(AgentBkpDir1),
+    ok = file:make_dir(AgentBkpDir2),
+    AgentBkpDirs = [AgentBkpDir1, AgentBkpDir2], 
+    config(Vsns, ManagerConfDir, AgentConfDir, ManagerIP, AgentIP, IpFamily),
+
+
+    %% --
+    %% Start the agent
+    %% 
+
+    Config2 = start_agent([{host,              Host}, 
+			   {ip,                IpFamily},
+			   {agent_node,        AgentNode}, 
+			   {agent_host,        AgentHost}, 
+			   {agent_ip,          AgentIP}, 
+			   {agent_backup_dirs, AgentBkpDirs}|Config]),
+
+    %% -- 
+    %% Create watchdog 
+    %% 
+
+    Dog = ?WD_START(?MINS(1)),
+
+    [{watchdog, Dog} | Config2].
+
+fin_v1_agent(Config) ->
+    AgentNode   = ?config(agent_node, Config),
+    ManagerNode = ?config(manager_node, Config),
+
+    %% -
+    %% Stop agent (this is the nice way to do it, 
+    %% so logs and files can be closed in the proper way).
+    %% 
+
+    AgentSup = ?config(agent_sup, Config),
+    stop_stdalone_agent(AgentSup), 
+
+    %% - 
+    %% Stop mnesia
+    %% 
+    mnesia_stop(AgentNode),
+
+
+    %% - 
+    %% Stop the agent node
+    %% 
+    stop_node(AgentNode),
+
+
+    %%     SubAgentNode = ?config(sub_agent_node, Config),
+    %%     stop_node(SubAgentNode),
+
+
+    %% - 
+    %% Stop the manager node
+    %% 
+    stop_node(ManagerNode),
+
+    Dog = ?config(watchdog, Config),
+    ?WD_STOP(Dog),
+    lists:keydelete(watchdog, 1, Config).

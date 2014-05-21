@@ -1,7 +1,7 @@
 %% 
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 1996-2013. All Rights Reserved.
+%% Copyright Ericsson AB 1996-2014. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -26,9 +26,11 @@
 -compile({no_auto_import,[error/1]}).
 -export([config/0]).
 
--export([write_config_file/4, append_config_file/4, read_config_file/3]).
+-export([write_config_file/4, append_config_file/4,
+	 read_config_file/3, read_config_file/4]).
 
 -export([write_agent_snmp_files/7, write_agent_snmp_files/12,
+	 write_agent_snmp_files/6, write_agent_snmp_files/11,
 
 	 write_agent_snmp_conf/5, 
 	 write_agent_snmp_context_conf/1, 
@@ -567,11 +569,9 @@ config_agent_snmp(Dir, Vsns) ->
 		end,
 		NT
 	end,
-    case (catch write_agent_snmp_files(Dir, 
-				       Vsns, ManagerIP, TrapUdp, 
-				       AgentIP, AgentUDP,
-				       SysName, NotifType, SecType, 
-				       Passwd, EngineID, MMS)) of
+    case (catch write_agent_snmp_files(
+		  Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP, SysName,
+		  NotifType, SecType, Passwd, EngineID, MMS)) of
 	ok ->
 	   i("~n- - - - - - - - - - - - -"),
 	   i("Info: 1. SecurityName \"initial\" has noAuthNoPriv read access~n"
@@ -1580,35 +1580,63 @@ remove_newline(Str) ->
 %% File generation
 %%======================================================================
 
+write_agent_snmp_files(
+  Dir, Vsns, Domain, ManagerAddr, AgentAddr, SysName)
+  when is_list(Dir),
+       is_list(Vsns),
+       is_atom(Domain),
+       is_list(SysName) ->
+    write_agent_snmp_files(
+      Dir, Vsns, Domain, ManagerAddr, AgentAddr, SysName,
+      trap, none, "", "agentEngine", 484).
+
 %%----------------------------------------------------------------------
 %% Dir: string()  (ex: "../conf/")
 %% ManagerIP, AgentIP: [int(),int(),int(),int()]
 %% TrapUdp, AgentUDP: integer()
 %% SysName: string()
 %%----------------------------------------------------------------------
-write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, 
-		       AgentIP, AgentUDP, SysName) 
-  when is_list(Dir) andalso 
-       is_list(Vsns) andalso 
-       is_list(ManagerIP) andalso 
-       is_integer(TrapUdp) andalso 
-       is_list(AgentIP) andalso 
-       is_integer(AgentUDP) andalso 
+write_agent_snmp_files(
+  Dir, Vsns, ManagerIP, TrapUDP, AgentIP, AgentUDP, SysName)
+  when is_list(Dir) andalso
+       is_list(Vsns) andalso
+       is_list(ManagerIP) andalso
+       is_integer(TrapUDP) andalso
+       is_list(AgentIP) andalso
+       is_integer(AgentUDP) andalso
        is_list(SysName) ->
-    write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP,
-			   SysName, "trap", none, "", "agentEngine", 484).
+    write_agent_snmp_files(
+      Dir, Vsns, ManagerIP, TrapUDP, AgentIP, AgentUDP, SysName,
+      trap, none, "", "agentEngine", 484).
 
 %% 
 %% ----- Agent config files generator functions -----
 %% 
 
-write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP, 
-		       SysName, NotifType, SecType, Passwd, EngineID, MMS) ->
+write_agent_snmp_files(
+  Dir, Vsns, Domain, ManagerAddr, AgentAddr, SysName,
+  NotifType, SecType, Passwd, EngineID, MMS) ->
+    write_agent_snmp_conf(Dir, Domain, AgentAddr, EngineID, MMS),
+    write_agent_snmp_context_conf(Dir),
+    write_agent_snmp_community_conf(Dir),
+    write_agent_snmp_standard_conf(Dir, SysName),
+    write_agent_snmp_target_addr_conf(Dir, Domain, ManagerAddr, Vsns),
+    write_agent_snmp_target_params_conf(Dir, Vsns),
+    write_agent_snmp_notify_conf(Dir, NotifType),
+    write_agent_snmp_usm_conf(Dir, Vsns, EngineID, SecType, Passwd),
+    write_agent_snmp_vacm_conf(Dir, Vsns, SecType),
+    ok.
+
+write_agent_snmp_files(
+  Dir, Vsns, ManagerIP, TrapUDP, AgentIP, AgentUDP, SysName,
+  NotifType, SecType, Passwd, EngineID, MMS) ->
+    Domain = snmp_target_mib:default_domain(),
+    ManagerAddr = {ManagerIP, TrapUDP},
     write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS),
     write_agent_snmp_context_conf(Dir),
     write_agent_snmp_community_conf(Dir),
     write_agent_snmp_standard_conf(Dir, SysName),
-    write_agent_snmp_target_addr_conf(Dir, ManagerIP, TrapUdp, Vsns),
+    write_agent_snmp_target_addr_conf(Dir, Domain, ManagerAddr, Vsns),
     write_agent_snmp_target_params_conf(Dir, Vsns),
     write_agent_snmp_notify_conf(Dir, NotifType),
     write_agent_snmp_usm_conf(Dir, Vsns, EngineID, SecType, Passwd),
@@ -1616,11 +1644,32 @@ write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP,
     ok.
 
 
+
 %% 
 %% ------ [agent] agent.conf ------
 %% 
 
-write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS) -> 
+
+write_agent_snmp_conf(Dir, Domain, AgentAddr, EngineID, MMS)
+  when is_atom(Domain) ->
+    {AgentIP, AgentUDP} = AgentAddr,
+    Conf =
+	[{intAgentTransportDomain,  Domain},
+	 {intAgentUDPPort,          AgentUDP},
+	 {intAgentIpAddress,        AgentIP},
+	 {snmpEngineID,             EngineID},
+	 {snmpEngineMaxMessageSize, MMS}],
+    do_write_agent_snmp_conf(Dir, Conf);
+write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS)
+  when is_integer(AgentUDP) ->
+    Conf =
+	[{intAgentUDPPort,          AgentUDP},
+	 {intAgentIpAddress,        AgentIP},
+	 {snmpEngineID,             EngineID},
+	 {snmpEngineMaxMessageSize, MMS}],
+    do_write_agent_snmp_conf(Dir, Conf).
+
+do_write_agent_snmp_conf(Dir, Conf) ->
     Comment = 
 "%% This file defines the Agent local configuration info\n"
 "%% The data is inserted into the snmpEngine* variables defined\n"
@@ -1635,11 +1684,7 @@ write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS) ->
 "%% {snmpEngineID, \"agentEngine\"}.\n"
 "%% {snmpEngineMaxMessageSize, 484}.\n"
 "%%\n\n",
-    Hdr = header() ++ Comment, 
-    Conf = [{intAgentUDPPort,          AgentUDP}, 
-	    {intAgentIpAddress,        AgentIP},
-	    {snmpEngineID,             EngineID},
-	    {snmpEngineMaxMessageSize, MMS}],
+    Hdr = header() ++ Comment,
     write_agent_config(Dir, Hdr, Conf).
 
 write_agent_config(Dir, Hdr, Conf) ->
@@ -1745,17 +1790,22 @@ update_agent_standard_config(Dir, Conf) ->
 %% ------ target_addr.conf ------
 %% 
 
-write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) -> 
+write_agent_snmp_target_addr_conf(Dir, Domain, Addr, Vsns)
+  when is_atom(Domain) ->
     Timeout    = 1500, 
     RetryCount = 3, 
-    write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, 
-				      Timeout, RetryCount, 
-				      Vsns).
+    write_agent_snmp_target_addr_conf(
+      Dir, Domain, Addr, Timeout, RetryCount, Vsns);
+write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns)
+  when is_integer(UDP) ->
+    Domain = snmp_target_mib:default_domain(),
+    Addr = {ManagerIp, UDP},
+    write_agent_snmp_target_addr_conf(Dir, Domain, Addr, Vsns).
 
-write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, 
-				  Timeout, RetryCount, 
-				  Vsns) -> 
-    Comment = 
+write_agent_snmp_target_addr_conf(
+  Dir, Domain, Addr, Timeout, RetryCount, Vsns)
+  when is_atom(Domain) ->
+    Comment =
 "%% This file defines the target address parameters.\n"
 "%% The data is inserted into the snmpTargetAddrTable defined\n"
 "%% in SNMP-TARGET-MIB, and in the snmpTargetAddrExtTable defined\n"
@@ -1775,35 +1825,42 @@ write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP,
 "%%\n\n",
     Hdr = header() ++ Comment,
     F = fun(v1 = Vsn, Acc) ->
-		[{mk_ip(ManagerIp, Vsn), 
-		  snmp_target_mib:default_domain(), 
-		  ManagerIp, UDP, Timeout, RetryCount, 
+		[{mk_name(Domain, Addr, Vsn),
+		  Domain, Addr, Timeout, RetryCount,
 		  "std_trap", mk_param(Vsn), "", [], 2048}| Acc];
 	   (v2 = Vsn, Acc) ->
-		[{mk_ip(ManagerIp, Vsn), 
-		  snmp_target_mib:default_domain(), 
-		  ManagerIp, UDP, Timeout, RetryCount, 
+		[{mk_name(Domain, Addr, Vsn),
+		  Domain, Addr, Timeout, RetryCount,
 		  "std_trap", mk_param(Vsn), "", [], 2048},
-		 {lists:flatten(io_lib:format("~s.2",[mk_ip(ManagerIp, Vsn)])),
-		  ManagerIp, UDP, Timeout, RetryCount, 
+		 {lists:flatten(
+		    io_lib:format("~s.2",[mk_name(Domain, Addr, Vsn)])),
+		  Domain, Addr, Timeout, RetryCount,
 		  "std_inform", mk_param(Vsn), "", [], 2048}| Acc];
 	   (v3 = Vsn, Acc) ->
-		[{mk_ip(ManagerIp, Vsn), 
-		  snmp_target_mib:default_domain(), 
-		  ManagerIp, UDP, Timeout, RetryCount, 
+		[{mk_name(Domain, Addr, Vsn),
+		  Domain, Addr, Timeout, RetryCount,
 		  "std_trap", mk_param(Vsn), "", [], 2048},
-		 {lists:flatten(io_lib:format("~s.3",[mk_ip(ManagerIp, Vsn)])),
-		  ManagerIp, UDP, Timeout, RetryCount, 
+		 {lists:flatten(
+		    io_lib:format("~s.3",[mk_name(Domain, Addr, Vsn)])),
+		  Domain, Addr, Timeout, RetryCount,
 		  "std_inform", mk_param(Vsn), "mgrEngine", [], 2048}| Acc]
 	end,
     Conf = lists:foldl(F, [], Vsns),
-    write_agent_target_addr_config(Dir, Hdr, Conf).
+    write_agent_target_addr_config(Dir, Hdr, Conf);
+write_agent_snmp_target_addr_conf(
+  Dir, ManagerIp, UDP, Timeout, RetryCount, Vsns) when is_integer(UDP) ->
+    Domain = snmp_target_mib:default_domain(),
+    Addr = {ManagerIp, UDP},
+    write_agent_snmp_target_addr_conf(
+      Dir, Domain, Addr, Timeout, RetryCount, Vsns).
 
 mk_param(Vsn) ->
     lists:flatten(io_lib:format("target_~w", [Vsn])).
 
-mk_ip([A,B,C,D], Vsn) ->
-    lists:flatten(io_lib:format("~w.~w.~w.~w ~w", [A,B,C,D,Vsn])).
+mk_name(Domain, Addr, Vsn) ->
+    lists:flatten(
+      io_lib:format(
+	"~s ~w", [snmp_conf:mk_addr_string({Domain, Addr}), Vsn])).
 
 write_agent_target_addr_config(Dir, Hdr, Conf) ->
     snmpa_conf:write_target_addr_config(Dir, Hdr, Conf).
@@ -2437,15 +2494,23 @@ write_config_file(Dir, FileName, Verify, Write)
 	is_list(FileName) andalso 
 	is_function(Verify) andalso 
 	is_function(Write)) ->
-    try
-	begin
-	    do_write_config_file(Dir, FileName, Verify, Write)
-	end
+    try	do_write_config_file(Dir, FileName, Verify, Write) of
+	ok ->
+	    ok;
+	Other ->
+	    d("File write of ~s returned: ~p~n", [FileName,Other])
     catch
 	throw:Error ->
+	    S = erlang:get_stacktrace(),
+	    d("File write of ~s throwed: ~p~n    ~p~n", [FileName,Error,S]),
 	    Error;
 	  T:E ->
-	    {error, {failed_write, Dir, FileName, T, E}}
+	    S = erlang:get_stacktrace(),
+	    d("File write of ~s exception: ~p:~p~n    ~p~n",
+	      [FileName,T,E,S]),
+	    {error,
+	     {failed_write, Dir, FileName,
+	      {T, E, erlang:get_stacktrace()}}}
     end.
 
 
@@ -2471,7 +2536,9 @@ append_config_file(Dir, FileName, Verify, Write)
 	throw:Error ->
 	    Error;
 	  T:E ->
-	    {error, {failed_append, Dir, FileName, T, E}}
+	    {error,
+	     {failed_append, Dir, FileName,
+	      {T, E, erlang:get_stacktrace()}}}
     end.
 
 do_append_config_file(Dir, FileName, Verify, Write) ->
@@ -2500,58 +2567,130 @@ file_write_and_close(Write, Fd, Dir, FileName) ->
     end.
 
 
+%% XXX remove
+read_config_file(Dir, FileName, Verify) ->
+    read_config_file(
+      Dir, FileName, fun snmp_conf:no_order/2,
+      fun (Term, State) ->
+	      {Verify(Term), State}
+      end).
+
 -spec read_config_file(Dir :: string(), 
-		       FileName :: string(), 
-		       Verify :: verify_config_entry_function()) ->
+		       FileName :: string(),
+		       Order :: function(),
+		       Verify :: function()) ->
     {ok, Config :: list()} | {error, Reason :: term()}.
 
-read_config_file(Dir, FileName, Verify) 
-  when is_list(Dir) andalso is_list(FileName) andalso is_function(Verify) ->
-    (catch do_read_config_file(Dir, FileName, Verify)).
-
-do_read_config_file(Dir, FileName, Verify) ->
+read_config_file(Dir, FileName, Order, Check)
+  when is_list(Dir), is_list(FileName),
+       is_function(Order), is_function(Check) ->
     case file:open(filename:join(Dir, FileName), [read]) of
 	{ok, Fd} ->
-	    Result = read_loop(Fd, [], Verify, 1),
-	    file:close(Fd),
-	    Result;
+	    try
+		{ok,
+		 verify_lines(
+		   lists:sort(
+		     fun ({_, T1, _}, {_, T2, _}) ->
+			     Order(T1, T2)
+		     end,
+		     read_lines(Fd, [], 1)),
+		   Check, undefined, [])}
+	    catch
+		Error ->
+		    {error, Error}
+	    after
+		file:close(Fd)
+	    end;
 	{error, Reason} ->
 	    {error, {Reason, FileName}}
     end.
 
-read_loop(Fd, Acc, Check, StartLine) ->
-    case read_term(Fd, StartLine) of
+read_lines(Fd, Acc, StartLine) ->
+    case read_and_parse_term(Fd, StartLine) of
 	{ok, Term, EndLine} ->
-	    case (catch Check(Term)) of
-		ok ->
-		    read_loop(Fd, [Term | Acc], Check, EndLine);
-		{error, Reason} ->
-		    {error, {failed_check, StartLine, EndLine, Reason}};
-		Error ->
-		    {error, {failed_check, StartLine, EndLine, Error}}
-	    end;
-	{error, EndLine, Error} ->
-            {error, {failed_reading, StartLine, EndLine, Error}};
-        eof ->
-            {ok, lists:reverse(Acc)}
+	    read_lines(Fd, [{StartLine, Term, EndLine}|Acc], EndLine);
+	{error, Error, EndLine} ->
+            throw({failed_reading, StartLine, EndLine, Error});
+        {eof, _EndLine} ->
+            lists:reverse(Acc)
     end.
-	    
-read_term(Fd, StartLine) ->
+
+read_and_parse_term(Fd, StartLine) ->
     case io:request(Fd, {get_until, "", erl_scan, tokens, [StartLine]}) of
 	{ok, Tokens, EndLine} ->
 	    case erl_parse:parse_term(Tokens) of
                 {ok, Term} ->
                     {ok, Term, EndLine};
                 {error, {Line, erl_parse, Error}} ->
-                    {error, Line, {parse_error, Error}}
+                    {error, {parse_error, Error}, Line}
             end;
-        {error, E, EndLine} ->
-            {error, EndLine, E};
-        {eof, _EndLine} ->
-            eof;
         Other ->
             Other
     end.
+
+verify_lines([], _, _, Acc) ->
+    lists:reverse(Acc);
+verify_lines(
+  [{StartLine, Term, EndLine}|Lines], Check, State, Acc) ->
+    try Check(Term, State) of
+	{ok, NewState} ->
+	    verify_lines(Lines, Check, NewState, [Term|Acc]);
+	{{ok, NewTerm}, NewState} ->
+	    verify_lines(Lines, Check, NewState, [NewTerm|Acc])
+    catch
+	{error, Reason} ->
+	    throw({failed_check, StartLine, EndLine, Reason});
+	C:R ->
+	    S = erlang:get_stacktrace(),
+	    throw({failed_check, StartLine, EndLine, {C, R, S}})
+    end.
+
+
+%% XXX remove
+
+%% do_read_config_file(Dir, FileName, Verify) ->
+%%     case file:open(filename:join(Dir, FileName), [read]) of
+%% 	{ok, Fd} ->
+%% 	    Result = read_loop(Fd, [], Verify, 1),
+%% 	    file:close(Fd),
+%% 	    Result;
+%% 	{error, Reason} ->
+%% 	    {error, {Reason, FileName}}
+%%     end.
+
+%% read_loop(Fd, Acc, Check, StartLine) ->
+%%     case read_term(Fd, StartLine) of
+%% 	{ok, Term, EndLine} ->
+%% 	    case (catch Check(Term)) of
+%% 		ok ->
+%% 		    read_loop(Fd, [Term | Acc], Check, EndLine);
+%% 		{error, Reason} ->
+%% 		    {error, {failed_check, StartLine, EndLine, Reason}};
+%% 		Error ->
+%% 		    {error, {failed_check, StartLine, EndLine, Error}}
+%% 	    end;
+%% 	{error, EndLine, Error} ->
+%%             {error, {failed_reading, StartLine, EndLine, Error}};
+%%         eof ->
+%%             {ok, lists:reverse(Acc)}
+%%     end.
+
+%% read_term(Fd, StartLine) ->
+%%     case io:request(Fd, {get_until, "", erl_scan, tokens, [StartLine]}) of
+%% 	{ok, Tokens, EndLine} ->
+%% 	    case erl_parse:parse_term(Tokens) of
+%%                 {ok, Term} ->
+%%                     {ok, Term, EndLine};
+%%                 {error, {Line, erl_parse, Error}} ->
+%%                     {error, Line, {parse_error, Error}}
+%%             end;
+%%         {error, E, EndLine} ->
+%%             {error, EndLine, E};
+%%         {eof, _EndLine} ->
+%%             eof;
+%%         Other ->
+%%             Other
+%%     end.
 
 
 agent_snmp_mk_secret(Alg, Passwd, EngineID) ->
@@ -2575,8 +2714,8 @@ ensure_started(App) ->
 
 %% -------------------------------------------------------------------------
 
-% d(F, A) ->
-%     i("DBG: " ++ F, A).
+d(F, A) ->
+    i("DBG: " ++ F, A).
 
 i(F) ->
     i(F, []).

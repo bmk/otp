@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %% 
-%% Copyright Ericsson AB 2006-2011. All Rights Reserved.
+%% Copyright Ericsson AB 2006-2014. All Rights Reserved.
 %% 
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -123,21 +123,24 @@ append_agent_config(Dir, Conf)
     
 
 read_agent_config(Dir) ->
-    Verify = fun(Entry) -> verify_agent_conf_entry(Entry) end,
-    read_config_file(Dir, "agent.conf", Verify).
+    Order = fun snmp_framework_mib:order_agent/2,
+    Check = fun check_agent_conf_entry/2,
+    read_config_file(Dir, "agent.conf", Order, Check).
 
-    
-verify_agent_conf([]) ->
+
+verify_agent_conf(Conf) ->
+    verify_agent_conf(Conf, undefined).
+%%
+verify_agent_conf([], _) ->
     ok;
-verify_agent_conf([H|T]) ->
-    verify_agent_conf_entry(H),
-    verify_agent_conf(T);
-verify_agent_conf(X) ->
+verify_agent_conf([H|T], State) ->
+    {_, NewState} = check_agent_conf_entry(H, State),
+    verify_agent_conf(T, NewState);
+verify_agent_conf(X, _) ->
     error({bad_agent_config, X}).
 
-verify_agent_conf_entry(Entry) ->
-    ok = snmp_framework_mib:check_agent(Entry),
-    ok.
+check_agent_conf_entry(Entry, State) ->
+    snmp_framework_mib:check_agent(Entry, State).
 
 write_agent_conf(Fd, "", Conf) ->
     write_agent_conf(Fd, Conf);
@@ -151,6 +154,8 @@ write_agent_conf(Fd, [H|T]) ->
     do_write_agent_conf(Fd, H),
     write_agent_conf(Fd, T).
 
+do_write_agent_conf(Fd, {intAgentTransportDomain = Tag, Val}) ->
+    io:format(Fd, "{~w, ~w}.~n", [Tag, Val]);
 do_write_agent_conf(Fd, {intAgentIpAddress = Tag, Val}) ->
     io:format(Fd, "{~w, ~w}.~n", [Tag, Val]);
 do_write_agent_conf(Fd, {intAgentUDPPort = Tag, Val} ) ->
@@ -204,8 +209,12 @@ append_context_config(Dir, Conf)
     
 
 read_context_config(Dir) ->
-    Verify = fun(Entry) -> verify_context_conf_entry(Entry) end,
-    read_config_file(Dir, "context.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_context_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "context.conf", Order, Verify).
 
     
 verify_context_conf([]) ->
@@ -286,8 +295,12 @@ append_community_config(Dir, Conf)
 
 
 read_community_config(Dir) ->
-    Verify = fun(Entry) -> verify_community_conf_entry(Entry) end,
-    read_config_file(Dir, "community.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_community_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "community.conf", Order, Verify).
 
     
 verify_community_conf([]) ->
@@ -358,8 +371,12 @@ append_standard_config(Dir, Conf)
 
 
 read_standard_config(Dir) ->
-    Verify = fun(Entry) -> verify_standard_conf_entry(Entry) end,
-    read_config_file(Dir, "standard.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_standard_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "standard.conf", Order, Verify).
 
     
 verify_standard_conf([]) ->
@@ -520,8 +537,12 @@ append_target_addr_config(Dir, Conf)
 
 
 read_target_addr_config(Dir) ->
-    Verify = fun(Entry) -> verify_target_addr_conf_entry(Entry) end,
-    read_config_file(Dir, "target_addr.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_target_addr_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "target_addr.conf", Order, Verify).
 
         
 verify_target_addr_conf([]) ->
@@ -547,29 +568,36 @@ write_target_addr_conf(Fd, Conf) ->
     lists:foreach(Fun, Conf),
     ok.
 
-do_write_target_addr_conf(Fd,
-			  {Name, 
-			   Ip, Udp,
-			   Timeout, RetryCount, TagList,
-			   ParamsName, EngineId,
-			   TMask, MaxMessageSize}) ->
-    Domain = snmp_target_mib:default_domain(), 
-    do_write_target_addr_conf(Fd,
-			      {Name, 
-			       Domain, Ip, Udp,
-			       Timeout, RetryCount, TagList,
-			       ParamsName, EngineId,
-			       TMask, MaxMessageSize});
-do_write_target_addr_conf(Fd,
-			  {Name, 
-			   Domain, Ip, Udp,
-			   Timeout, RetryCount, TagList,
-			   ParamsName, EngineId,
-			   TMask, MaxMessageSize}) ->
-    io:format(Fd, 
-	      "{\"~s\", ~w, ~w, ~w, ~w, ~w, \"~s\", \"~s\", \"~s\", ~w, ~w}.~n",
-              [Name, Domain, Ip, Udp, Timeout, RetryCount, TagList,
-               ParamsName, EngineId, TMask, MaxMessageSize]);
+do_write_target_addr_conf(
+  Fd,
+  {Name, Ip, Udp, Timeout, RetryCount, TagList,
+   ParamsName, EngineId, TMask, MaxMessageSize})
+  when is_integer(Udp) ->
+    Domain = snmp_target_mib:default_domain(),
+    Address = {Ip, Udp},
+    do_write_target_addr_conf(
+      Fd,
+      {Name, Domain, Address, Timeout, RetryCount, TagList,
+       ParamsName, EngineId, TMask, MaxMessageSize});
+do_write_target_addr_conf(
+  Fd,
+  {Name, Domain, Address, Timeout, RetryCount, TagList,
+   ParamsName, EngineId, TMask, MaxMessageSize})
+  when is_atom(Domain) ->
+    io:format(
+      Fd,
+      "{\"~s\", ~w, ~w, ~w, ~w, \"~s\", \"~s\", \"~s\", ~w, ~w}.~n",
+      [Name, Domain, Address, Timeout, RetryCount, TagList,
+       ParamsName, EngineId, TMask, MaxMessageSize]);
+do_write_target_addr_conf(
+  Fd,
+  {Name, Domain, Ip, Udp, Timeout, RetryCount, TagList,
+   ParamsName, EngineId, TMask, MaxMessageSize}) ->
+    Address = {Ip, Udp},
+    do_write_target_addr_conf(
+      Fd,
+      {Name, Domain, Address, Timeout, RetryCount, TagList,
+       ParamsName, EngineId, TMask, MaxMessageSize});
 do_write_target_addr_conf(_Fd, Crap) ->
     error({bad_target_addr_config, Crap}).
 
@@ -626,8 +654,12 @@ append_target_params_config(Dir, Conf)
 
 
 read_target_params_config(Dir) ->
-    Verify = fun(Entry) -> verify_target_params_conf_entry(Entry) end,
-    read_config_file(Dir, "target_params.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_target_params_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "target_params.conf", Order, Verify).
 
 
 verify_target_params_conf([]) ->
@@ -698,8 +730,12 @@ append_notify_config(Dir, Conf)
 
 
 read_notify_config(Dir) ->
-    Verify = fun(Entry) -> verify_notify_conf_entry(Entry) end,
-    read_config_file(Dir, "notify.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_notify_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "notify.conf", Order, Verify).
 
 
 verify_notify_conf([]) ->
@@ -794,8 +830,12 @@ append_usm_config(Dir, Conf)
 
 
 read_usm_config(Dir) ->
-    Verify = fun(Entry) -> verify_usm_conf_entry(Entry) end,
-    read_config_file(Dir, "usm.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_usm_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "usm.conf", Order, Verify).
 
 
 verify_usm_conf([]) ->
@@ -903,8 +943,12 @@ append_vacm_config(Dir, Conf)
 
 
 read_vacm_config(Dir) ->
-    Verify = fun(Entry) -> verify_vacm_conf_entry(Entry) end,
-    read_config_file(Dir, "vacm.conf", Verify).
+    Order = fun snmp_conf:no_order/2,
+    Verify =
+	fun (Entry, State) ->
+		{verify_vacm_conf_entry(Entry), State}
+	end,
+    read_config_file(Dir, "vacm.conf", Order, Verify).
 
 
 verify_vacm_conf([]) ->
@@ -958,8 +1002,8 @@ write_config_file(Dir, File, Verify, Write) ->
 append_config_file(Dir, File, Verify, Write) ->
     snmp_config:append_config_file(Dir, File, Verify, Write).
 
-read_config_file(Dir, File, Verify) ->
-    snmp_config:read_config_file(Dir, File, Verify).
+read_config_file(Dir, File, Order, Check) ->
+    snmp_config:read_config_file(Dir, File, Order, Check).
 
 
 %% ---- config file utility functions ----
@@ -971,7 +1015,6 @@ header() ->
 		  "~w (version-~s) ~w-~2.2.0w-~2.2.0w "
 		  "~2.2.0w:~2.2.0w:~2.2.0w\n",
 		  [?MODULE, ?version, Y, Mo, D, H, Mi, S]).
-
 
 error(R) ->
     throw({error, R}).

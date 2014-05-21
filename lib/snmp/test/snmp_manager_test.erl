@@ -1,7 +1,7 @@
 %% 
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2003-2013. All Rights Reserved.
+%% Copyright Ericsson AB 2003-2014. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -228,8 +228,10 @@ init_per_testcase2(Case, Config) ->
     AgLogDir  = filename:join(AgTopDir,   "log/"),
     ?line ok  = file:make_dir(AgLogDir),
 
+    Family = proplists:get_value(ipfamily, Config, inet),
+
     Conf = [{watchdog,                  ?WD_START(?MINS(5))},
-	    {ip,                        ?LOCALHOST()},
+	    {ip,                        ?LOCALHOST(Family)},
 	    {case_top_dir,              CaseTopDir},
 	    {agent_dir,                 AgTopDir},
 	    {agent_conf_dir,            AgConfDir},
@@ -393,7 +395,8 @@ all() ->
      {group, event_tests}, 
      {group, event_tests_mt}, 
      discovery, 
-     {group, tickets} 
+     {group, tickets}, 
+     {group, ipv6}
     ].
 
 groups() -> 
@@ -528,7 +531,15 @@ groups() ->
       [
        otp8395_1
       ]
+     },
+     {ipv6, [], 
+      [
+       simple_sync_get3,
+       inform1
+      ]
      }
+     
+
     ].
 
 init_per_group(request_tests_mt = GroupName, Config) ->
@@ -539,10 +550,16 @@ init_per_group(event_tests_mt = GroupName, Config) ->
     snmp_test_lib:init_group_top_dir(
       GroupName, 
       [{manager_net_if_module, snmpm_net_if_mt} | Config]);
+init_per_group(ipv6 = GroupName, Config) -> 
+    case ct:require(ipv6_hosts) of
+	ok ->
+	    ipv6_init(snmp_test_lib:init_group_top_dir(GroupName, Config));
+	_ ->
+	    {skip, "Host does not support IPV6"}
+    end;
 init_per_group(GroupName, Config) ->
     snmp_test_lib:init_group_top_dir(GroupName, Config).
-
-	    
+   
 end_per_group(_GroupName, Config) ->
     %% Do we really need to do this?
     lists:keydelete(snmp_group_top_dir, 1, Config).
@@ -1491,7 +1508,7 @@ register_agent3(Config) when is_list(Config) ->
     TargetName2 = "agent3", 
     ?line ok = mgr_register_agent(ManagerNode, user_alfa, TargetName2,
 				  [{tdomain,   transportDomainUdpIpv6},
-				   {address,   LocalHost},
+				   {address,   {0,0,0,0,0,0,0,1}},
 				   {port,      5002},
 				   {engine_id, "agentEngineId-2"}]),
     TargetName3 = "agent4", 
@@ -5057,7 +5074,7 @@ inform_swarm_collector(N) ->
 inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, _) 
   when ((N == SentAckCnt) and 
 	(N == RespCnt)    and
-	(N >= RecvCnt)) ->
+	(N =< RecvCnt)) ->
     p("inform_swarm_collector -> done when"
       "~n   N:          ~w"
       "~n   SentAckCnt: ~w"
@@ -6279,3 +6296,5 @@ formated_timestamp() ->
 %% p(TName, F, A) ->
 %%     io:format("~w -> " ++ F ++ "~n", [TName|A]).
 
+ipv6_init(Config) when is_list(Config) ->
+    [{ipfamily, inet6} | Config].
