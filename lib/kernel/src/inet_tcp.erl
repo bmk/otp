@@ -160,7 +160,7 @@ listen(Port, Opts) ->
         {ok,
          #listen_opts{
             fd = Fd,
-            ifaddr = undefined,
+            ifaddr = BAddr = undefined,
             port = BPort,
             opts = SockOpts}}
           when ?port(BPort) ->
