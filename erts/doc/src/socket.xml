@@ -275,6 +275,9 @@
       <name name="cmsghdr_send"/>
     </datatype>
     <datatype>
+      <name name="cmsghdr_creds"/>
+    </datatype>
+    <datatype>
       <name name="icmp_dest_unreach"/>
     </datatype>
     <datatype>

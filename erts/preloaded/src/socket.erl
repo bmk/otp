@@ -135,6 +135,7 @@
               cmsghdr_type/0,
               %% cmsghdr_data/0,
               cmsghdr_recv/0, cmsghdr_send/0,
+              cmsghdr_creds/0,
 
               ee_origin/0,
               icmp_dest_unreach/0,
@@ -614,7 +615,7 @@
 -type cmsghdr_recv() :: 
         #{level := socket,    type := timestamp,   data := timeval()}      |
         #{level := socket,    type := rights,      data := binary()}       |
-        #{level := socket,    type := credentials, data := binary()}       |
+        #{level := socket,    type := credentials, data := cmsghdr_creds()}       |
         #{level := socket,    type := integer(),   data := binary()}       |
         #{level := ip,        type := tos,         data := ip_tos()}       |
         #{level := ip,        type := recvtos,     data := ip_tos()}       |
@@ -633,7 +634,7 @@
 -type cmsghdr_send() :: 
         #{level := socket,    type := timestamp,   data := binary()} |
         #{level := socket,    type := rights,      data := binary()} |
-        #{level := socket,    type := credentials, data := binary()} |
+        #{level := socket,    type := credentials, data := binary() | cmsghdr_creds()}       |
         #{level := socket,    type := integer(),   data := binary()} |
         #{level := ip,        type := tos,         data := ip_tos()  | binary()} |
         #{level := ip,        type := ttl,         data := integer() | binary()} |
@@ -642,6 +643,12 @@
         #{level := ipv6,      type := integer(),   data := binary()} |
         #{level := udp,       type := integer(),   data := binary()} |
         #{level := integer(), type := integer(),   data := binary()}.
+
+-type cmsghdr_creds() :: #{
+        pid := non_neg_integer(),
+        uid := non_neg_integer(),
+        gid := non_neg_integer()
+       }.
 
 -type ee_origin() :: none | local | icmp | icmp6 | uint8().
 -type icmp_dest_unreach() :: net_unreach | host_unreach | port_unreach | frag_needed |
