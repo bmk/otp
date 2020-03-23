@@ -18139,22 +18139,31 @@ char* decode_cmsghdr_data(ErlNifEnv*       env,
 #elif defined(SCM_CREDS)
           case SCM_CREDS:
 #endif
-              ERL_NIF_TERM val;
-              struct ucred data;
-
-              if ((GET_MAP_VAL(env, eData, atom_pid, &val) && GET_INT(env, eData, &data.pid))
-               && (GET_MAP_VAL(env, eData, atom_uid, &val) && GET_INT(env, eData, &data.uid))
-               && (GET_MAP_VAL(env, eData, atom_gid, &val) && GET_INT(env, eData, &data.gid))) {
-                  SSDBG( descP, ("SOCKET", "decode_cmsghdr_data {%d} -> "
-                              "do final decode with credentials (=#{pid=>%d,uid=>%d,gid=>%d})"
-                              "\r\n", descP->sock, data.pid, data.uid, data.gid) );
-                  return decode_cmsghdr_final(descP, bufP, rem, level, type,
-                                              (char*) &data,
-                                              sizeof(data),
-                                              used);
-              } else {
-                  *used = 0;
-                  xres  = ESOCK_STR_EINVAL;
+              {
+                  ERL_NIF_TERM val;
+                  struct ucred data;
+                  
+                  if ((GET_MAP_VAL(env, eData, atom_pid, &val) &&
+                       GET_INT(env, val, &data.pid))
+                      && (GET_MAP_VAL(env, eData, atom_uid, &val) &&
+                          GET_UINT(env, val, &data.uid))
+                      && (GET_MAP_VAL(env, eData, atom_gid, &val) &&
+                          GET_UINT(env, val, &data.gid))) {
+                      SSDBG( descP,
+                             ("SOCKET",
+                              "decode_cmsghdr_data {%d} -> "
+                              "do final decode with credentials:"
+                              "\r\n      #{pid=>%d,uid=>%d,gid=>%d}"
+                              "\r\n",
+                              descP->sock, data.pid, data.uid, data.gid) );
+                      return decode_cmsghdr_final(descP, bufP, rem, level, type,
+                                                  (char*) &data,
+                                                  sizeof(data),
+                                                  used);
+                  } else {
+                      *used = 0;
+                      xres  = ESOCK_STR_EINVAL;
+                  }
               }
               break;
 #endif // if defined(SCM_CREDENTIALS)
@@ -18802,21 +18811,22 @@ char* encode_cmsghdr_data_socket(ErlNifEnv*     env,
 #elif defined(SCM_CREDS)
     case SCM_CREDS:
 #endif
-        struct ucred* credP = (struct ucred*) dataP;
+        {
+            struct ucred* credP = (struct ucred*) dataP;
 
-        ERL_NIF_TERM keys[] = {atom_pid, atom_uid, atom_gid};
-        ERL_NIF_TERM vals[] = {
-            enif_make_int(env, credP->pid),
-            enif_make_int(env, credP->uid),
-            enif_make_int(env, credP->gid)
-        };
-        unsigned int numKeys = sizeof(keys) / sizeof(ERL_NIF_TERM);
-        unsigned int numVals = sizeof(vals) / sizeof(ERL_NIF_TERM);
+            ERL_NIF_TERM keys[]  = {atom_pid, atom_uid, atom_gid};
+            ERL_NIF_TERM pid     = MKI(env,  credP->pid);
+            ERL_NIF_TERM uid     = MKUI(env, credP->uid);
+            ERL_NIF_TERM gid     = MKUI(env, credP->gid);
+            ERL_NIF_TERM vals[]  = {pid, uid, gid};
+            unsigned int numKeys = sizeof(keys) / sizeof(ERL_NIF_TERM);
+            unsigned int numVals = sizeof(vals) / sizeof(ERL_NIF_TERM);
 
-        ESOCK_ASSERT( (numKeys == numVals) );
+            ESOCK_ASSERT( (numKeys == numVals) );
 
-        if (MKMA(env, keys, vals, numKeys, eCMsgHdrData)) {
-            break;
+            if (MKMA(env, keys, vals, numKeys, eCMsgHdrData)) {
+                break;
+            }
         }
 #endif
 
