@@ -71,6 +71,11 @@
          cancel/2
         ]).
 
+%% Misc utility functions
+-export([
+	 which_socket_kind/1
+	]).
+
 -export_type([
               socket/0,
               socket_handle/0,
@@ -848,12 +853,34 @@ monitored_by(Socket) ->
 
 -spec to_list(Socket) -> list() when
       Socket :: socket().
-
+    
 to_list(?socket(SockRef)) when is_reference(SockRef) ->
     "#Ref" ++ Id = erlang:ref_to_list(SockRef),
     "#Socket" ++ Id;
 to_list(Socket) ->
     erlang:error(badarg, [Socket]).
+
+
+%% *** which_socket_kind/1 ***
+%%
+%% Utility function that returns the "kind" of socket.
+%% That is, if its a "plain" socket or a compatibillity socket.
+%%
+
+-spec which_socket_kind(Socket :: socket()) -> plain | compat.
+
+which_socket_kind(?socket(SockRef) = Socket) when is_reference(SockRef) ->
+    case prim_socket:getopt(SockRef, {otp,meta}) of
+	{ok, undefined} ->
+	    plain;
+	{ok, _} ->
+	    compat;
+	{error, _} ->
+	    erlang:error(badarg, [Socket])
+    end;
+which_socket_kind(Socket) ->
+    erlang:error(badarg, [Socket]).
+
 
 
 %% ===========================================================================
@@ -3882,6 +3909,9 @@ bincat(<<_/binary>> = A, <<>>) -> A;
 bincat(<<_/binary>> = A, <<_/binary>> = B) ->
     <<A/binary, B/binary>>.
 
+
+%% f(F, A) ->
+%%     lists:flatten(io_lib:format(F, A)).
 
 %% p(F) ->
 %%     p(F, []).

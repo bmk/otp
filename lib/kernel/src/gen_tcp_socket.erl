@@ -600,7 +600,7 @@ which_packet_type(?MODULE_socket(_Server, Socket)) ->
 	    error
     end.
 
-			 
+
 %%% ========================================================================
 %%% Socket glue code
 %%%
