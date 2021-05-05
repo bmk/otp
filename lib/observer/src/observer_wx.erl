@@ -203,19 +203,24 @@ setup(#state{frame = Frame} = State) ->
     %% Note that this panel should *only* be added if we have support for socket
     %% Also, if we run on/with an "old" node (without this support),
     %% we should also not include this!
-    SockPanel =
-	try socket:supports() of
-	    _ ->
-		d("setup -> create socket panel"),
-		SP = observer_sock_wx:start_link(Notebook,
-						 self(),
-						 Cnf(sock_panel)),
-		wxNotebook:addPage(Notebook, SP, "Sockets", []),
-		SP
-    catch
-	_:_:_ ->
-	    undefined
-    end,
+    %% SockPanel =
+    %% 	try socket:supports() of
+    %% 	    _ ->
+    %% 		d("setup -> create socket panel"),
+    %% 		SP = observer_sock_wx:start_link(Notebook,
+    %% 						 self(),
+    %% 						 Cnf(sock_panel)),
+    %% 		wxNotebook:addPage(Notebook, SP, "Sockets", []),
+    %% 		SP
+    %% 	catch
+    %% 	    _:_:_ ->
+    %% 		undefined
+    %% 	end,
+    d("setup -> create socket panel"),
+    SockPanel = observer_sock_wx:start_link(Notebook,
+					    self(),
+					    Cnf(sock_panel)),
+    wxNotebook:addPage(Notebook, SockPanel, "Sockets", []),
 
     %% Table Viewer Panel
     d("setup -> create table panel"),

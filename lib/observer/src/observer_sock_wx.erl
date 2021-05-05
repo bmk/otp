@@ -111,7 +111,9 @@ update_gen_socket_info(#state{node   = {Node, true},
     case rpc:call(Node, observer_backend, socket_info, []) of
 	Info when is_list(Info) ->
 	    Gen = info_fields(),
-	    observer_lib:update_info(Fields, observer_lib:fill_info(Gen, Info)),
+	    observer_lib:update_info(Fields,
+	    			     observer_lib:fill_info(Gen, Info,
+	    						    "Not Supported")),
 	    wxSizer:layout(Sizer);
 	_ ->
 	    ignore
@@ -129,17 +131,35 @@ init([Notebook, Parent, Config]) ->
       "~n      Notebook: ~p"
       "~n      Parent:   ~p"
       "~n      Config:   ~p", [Notebook, Parent, Config]),
-    Info   = observer_backend:socket_info(),
+    try
+	begin
+	    do_init(Notebook, Parent, Config, observer_backend:socket_info())
+	end
+    catch
+	C:E:S ->
+	    %% Current node does not support socket (windows?)
+	    d("init -> catched: "
+	      "~n   C: ~p"
+	      "~n   E: ~p"
+	      "~n   S: ~p", [C, E, S]),
+	    do_init(Notebook, Parent, Config, [])
+    end.
+
+do_init(Notebook, Parent, Config, Info) ->
     Gen    = info_fields(),
     Panel  = wxPanel:new(Notebook),
     Sizer  = wxBoxSizer:new(?wxVERTICAL),
     GenSizer = wxBoxSizer:new(?wxHORIZONTAL),
     {GenPanel, _GenSizer, GenFields} =
-	observer_lib:display_info(Panel, observer_lib:fill_info(Gen, Info)),
-    wxSizer:add(GenSizer, GenPanel, [{flag, ?wxEXPAND}, {proportion, 1}]),
+	observer_lib:display_info(Panel, 
+				  observer_lib:fill_info(Gen, Info,
+							 "Not Supported")),
+    wxSizer:add(GenSizer, GenPanel,
+		[{flag, ?wxEXPAND}, {proportion, 1}]),
     BorderFlags = ?wxLEFT bor ?wxRIGHT,
-    wxSizer:add(Sizer, GenSizer, [{flag, ?wxEXPAND bor BorderFlags bor ?wxTOP},
-				  {proportion, 0}, {border, 5}]),
+    wxSizer:add(Sizer, GenSizer,
+		[{flag, ?wxEXPAND bor BorderFlags bor ?wxTOP},
+		 {proportion, 0}, {border, 5}]),
     Style  = ?wxLC_REPORT bor ?wxLC_HRULES,
     Grid   = wxListCtrl:new(Panel, [{winid, ?GRID}, {style, Style}]),
     wxSizer:add(Sizer, Grid, [{flag, ?wxEXPAND bor ?wxALL},
