@@ -618,20 +618,29 @@ do_t_fdconnect(Config) ->
     FD = gen_tcp_api_SUITE:getsockfd(),
     ?P("try connect (to port ~w) using file descriptor ~w", [LPort, FD]),
     COpts = ?INET_BACKEND_OPTS(Config) ++ [{fd, FD}, {active, false}],
+    snmp:enable_trace(),
+    snmp:set_trace([gen_tcp, inet, inet_tcp],
+                   [{timestamp,    true},
+                    {scope,        all_functions},
+                    {return_trace, true}]),
     Client = try gen_tcp:connect(localhost, LPort, COpts) of
                  {ok, CSock} ->
+                     snmp:disable_trace(),
                      CSock;
                  {error, eaddrnotavail = CReason} ->
+                     snmp:disable_trace(),
                      gen_tcp:close(L),
                      gen_tcp_api_SUITE:closesockfd(FD),
                      ?SKIPT(connect_failed_str(CReason));
                  {error, CReason} ->
+                     snmp:disable_trace(),
                      ?P("UNEXPECTED ERROR - connect error: "
                         "~n      COpts:  ~p"
                         "~n      Reason: ~p", [COpts, CReason]),
                      ct:fail({unexpected_connect_error, CReason, COpts})
              catch
                  CC : CE : CS ->
+                     snmp:disable_trace(),
                      ?P("UNEXPECTED ERROR - caught connect: "
                         "~n   COpts: ~p"
                         "~n   C:     ~p"
