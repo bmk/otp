@@ -619,7 +619,7 @@ do_t_fdconnect(Config) ->
     ?P("try connect (to port ~w) using file descriptor ~w", [LPort, FD]),
     COpts = ?INET_BACKEND_OPTS(Config) ++ [{fd, FD}, {active, false}],
     snmp:enable_trace(),
-    snmp:set_trace([gen_tcp, inet, inet_tcp],
+    snmp:set_trace([gen_tcp, inet, inet_tcp, prim_inet],
                    [{timestamp,    true},
                     {scope,        all_functions},
                     {return_trace, true}]),
