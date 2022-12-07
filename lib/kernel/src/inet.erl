@@ -962,6 +962,7 @@ connect_options() ->
      show_econnreset, bind_to_device].
     
 connect_options(Opts, Mod) ->
+    %% ?DBG([{opts, Opts}, {mod, Mod}]),
     BaseOpts = 
 	case application:get_env(kernel, inet_default_connect_options) of
 	    {ok, List} when is_list(List) ->
@@ -974,6 +975,7 @@ connect_options(Opts, Mod) ->
 	    _ ->
 		#connect_opts{opts = [{active,true}]}
 	end,
+    %% ?DBG([{'base opts', BaseOpts}]),
     case con_opt(Opts, BaseOpts, connect_options()) of
 	{ok, R} ->
 	    {ok, R#connect_opts {
@@ -984,8 +986,10 @@ connect_options(Opts, Mod) ->
     end.
 
 con_opt([{raw,A,B,C}|Opts],#connect_opts{} = R,As) ->
+    %% ?DBG([{raw, {A, B, C}}]),
     con_opt([{raw,{A,B,C}}|Opts],R,As);
 con_opt([Opt | Opts], #connect_opts{ifaddr = IfAddr} = R, As) ->
+    %% ?DBG([{'opt', Opt}]),
     case Opt of
 	{ifaddr, Addr} when is_map(Addr) ->
             con_opt(Opts, R#connect_opts{ ifaddr = ensure_sockaddr(Addr) }, As);
@@ -1029,9 +1033,11 @@ con_opt([Opt | Opts], #connect_opts{ifaddr = IfAddr} = R, As) ->
 	_ -> {error, badarg}
     end;
 con_opt([], #connect_opts{} = R, _) ->
+    %% ?DBG(["done", {r, R}]),
     {ok, R}.
 
 con_add(Name, Val, #connect_opts{} = R, Opts, AllOpts) ->
+    %% ?DBG([{name, Name}, {val, Val}, {r, R}]),
     case add_opt(Name, Val, R#connect_opts.opts, AllOpts) of
 	{ok, SOpts} ->
 	    con_opt(Opts, R#connect_opts { opts = SOpts }, AllOpts);
@@ -1377,8 +1383,10 @@ sctp_module(Opts) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 add_opt(Name, Val, Opts, As) ->
+    %% ?DBG([{name, Name}, {val, Val}, {opts, Opts}]),
     case lists:member(Name, As) of
 	true ->
+            %% ?DBG("try validate option value"),
 	    case prim_inet:is_sockopt_val(Name, Val) of
 		true when Name =:= raw ->
 		    {ok, [{Name,Val} | Opts]};

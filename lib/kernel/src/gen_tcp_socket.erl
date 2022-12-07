@@ -18,6 +18,7 @@
 %% %CopyrightEnd%
 %%
 
+
 -module(gen_tcp_socket).
 -behaviour(gen_statem).
 
@@ -108,15 +109,23 @@ connect(Address, Port, Opts, Timeout) ->
 %% Helpers -------
 
 connect_lookup(Address, Port, Opts, Timer) ->
+    %% ?DBG([{address, Address}, {port, Port}, {opts, Opts}, {timer, Timer}]),
     Opts_1 = internalize_setopts(Opts),
+    %% ?DBG([{'opts 1', Opts_1}]),
     {Mod, Opts_2} = inet:tcp_module(Opts_1, Address),
+    %% ?DBG([{mod, Mod}, {'opts 2', Opts_2}]),
     Domain = domain(Mod),
+    %% ?DBG([{domain, Domain}]),
     {StartOpts, Opts_3} = split_start_opts(Opts_2),
+    %% ?DBG([{'start opts', StartOpts}, {'opts 3', Opts_3}]),
     ErrRef = make_ref(),
     try
         IPs = val(ErrRef, Mod:getaddrs(Address, Timer)),
+        %% ?DBG([{ips, IPs}]),
         TP = val(ErrRef, Mod:getserv(Port)),
+        %% ?DBG([{tp, TP}]),
         CO = val(ErrRef, inet:connect_options(Opts_3, Mod)),
+        %% ?DBG([{co, CO}]),
         {sockaddrs(IPs, TP, Domain), CO}
     of
         {Addrs,
@@ -126,14 +135,17 @@ connect_lookup(Address, Port, Opts, Timer) ->
             port = BindPort,
             opts = ConnectOpts}} ->
             %%
-            %% ?DBG({Domain, BindIP}),
+            %% ?DBG([{'bind ip', BindIP}, {'bind port', BindPort}]),
             BindAddr = bind_addr(Domain, BindIP, BindPort),
+            %% ?DBG([{'bind addr', BindAddr}]),
             ExtraOpts = extra_opts(Fd),
+            %% ?DBG([{'extra opts', ExtraOpts}]),
             connect_open(
               Addrs, Domain, ConnectOpts, StartOpts, ExtraOpts,
               Timer, BindAddr)
     catch
         throw : {ErrRef, Reason} ->
+            %% ?DBG([{'err ref', ErrRef}, {reason, Reason}]),
             ?badarg_exit({error, Reason})
     end.
 
@@ -152,23 +164,30 @@ connect_open(
         {ok, Server} ->
             ErrRef = make_ref(),
             try
+                %% ?DBG("process options"),
                 Setopts =
                     default_active_true(
                       [{start_opts, StartOpts} |
                        setopts_opts(ErrRef, ConnectOpts)]),
+                %% ?DBG("try set options"),
                 ok(ErrRef, call(Server, {setopts, Setopts})),
+                %% ?DBG("try bind"),
                 ok(ErrRef, call_bind(Server, BindAddr)),
                 DefaultError = {error, einval},
+                %% ?DBG("try connect"),
                 Socket =
                     val(ErrRef,
                         connect_loop(Addrs, Server, DefaultError, Timer)),
+                %% ?DBG("done"),
                 {ok, ?MODULE_socket(Server, Socket)}
             catch
                 throw : {ErrRef, Reason} ->
+                    %% ?DBG([{'err ref', ErrRef}, {reason, Reason}]),
                     close_server(Server),
                     ?badarg_exit({error, Reason})
             end;
         {error, _} = Error ->
+            %% ?DBG([{error, Error}]),
             ?badarg_exit(Error)
     end.
 
@@ -859,6 +878,7 @@ split_start_opts(Opts) ->
 %% by throwing {ErrRef, badarg}.
 %%
 setopts_opts(ErrRef, Opts) ->
+    %% ?DBG([{'err ref', ErrRef}, {opts, Opts}]),
     SocketOpts = socket_opts(),
     ServerOpts = server_opts(),
     [Opt ||
@@ -879,6 +899,7 @@ setopts_opts(ErrRef, Opts) ->
 %% Socket options
 
 socket_setopt(Socket, raw, Value) ->
+    %% ?DBG([{value, Value}]),
     case Value of
         {Level, Key, Val} ->
             socket:setopt_native(Socket, {Level,Key}, Val);
@@ -886,7 +907,7 @@ socket_setopt(Socket, raw, Value) ->
             {error, einval}
     end;
 socket_setopt(Socket, {Domain, _} = Opt, Value) when is_atom(Domain) ->
-    %% ?DBG(Opt),
+    %% ?DBG([{opt, Opt}, {value, Value}]),
     %% socket:setopt(Socket, otp, debug, true),
     Res = socket:setopt(Socket, Opt, socket_setopt_value(Opt, Value)),
     %% socket:setopt(Socket, otp, debug, false),
@@ -894,7 +915,7 @@ socket_setopt(Socket, {Domain, _} = Opt, Value) when is_atom(Domain) ->
 socket_setopt(Socket, DomainProps, Value) when is_list(DomainProps) ->
     %% We need to lookup the domain of the socket,
     %% so we can select which one to use.
-    %% ?DBG(Opt0),
+    %% ?DBG([{'domain props', DomainProps}, {value, Value}]),
     case socket:getopt(Socket, otp, domain) of
         {ok, Domain} ->
             case lists:keysearch(Domain, 1, DomainProps) of
@@ -915,6 +936,12 @@ socket_setopt(Socket, DomainProps, Value) when is_list(DomainProps) ->
 
 socket_setopt_value({socket,linger}, {OnOff, Linger}) ->
     #{onoff => OnOff, linger => Linger};
+socket_setopt_value({socket,bindtodevice}, DeviceBin)
+  when is_binary(DeviceBin) ->
+    %% Currently: 
+    %% prim_inet: Require that device is a binary()
+    %% socket:    Require that device is a string()
+    binary_to_list(DeviceBin);
 socket_setopt_value(_Opt, Value) -> Value.
 
 
@@ -1114,11 +1141,14 @@ meta(D) -> maps:with(maps:keys(server_write_opts()), D).
 
 %% Start for connect or listen - create a socket
 start_server(Domain, StartOpts, ExtraOpts) ->
+    %% ?DBG([{domain, Domain}, {'start opts', StartOpts}, {'extra opts', ExtraOpts}]),
     Owner = self(),
     Arg   = {open, Domain, ExtraOpts, Owner},
     case gen_statem:start(?MODULE, Arg, StartOpts) of
         {ok, Server} -> {ok, Server};
-        {error, _} = Error -> Error
+        {error, _} = Error ->
+            %% ?DBG([{error, Error}]),
+            Error
     end.
 
 %% Start for accept - have no socket yet
@@ -2529,7 +2559,7 @@ state_setopts(P, D, State, [{Tag,Val} | Opts]) ->
                     %% ?DBG('server write when state closed'),
                     {{error, einval}, D};
                 true ->
-                    %% ?DBG('server write'),
+                    %% ?DBG("server write"),
                     state_setopts_server(
                       P, D, State, Opts, Tag, Val);
                 false ->
@@ -2540,10 +2570,10 @@ state_setopts(P, D, State, [{Tag,Val} | Opts]) ->
                           when State =:= 'closed';
                                State =:= 'closed_read';
                                State =:= 'closed_read_write' ->
-                            %% ?DBG('server read when state closed*'),
+                            %% ?DBG("server read when state closed*"),
                             {{error, einval}, D};
                         true ->
-                            %% ?DBG('server read'),
+                            %% ?DBG("server read"),
                             state_setopts_server(
                               P, D, State, Opts, Tag, Val);
                         false ->
